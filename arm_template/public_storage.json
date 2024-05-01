@@ -1,0 +1,163 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "uniqueName": {
+            "type": "string",
+            "defaultValue": ""
+        },
+        "cortexAccessToken": {
+            "type": "string",
+            "metadata": {
+                "description": "Cortex HTTP authorization key"
+            }
+        },
+        "targetStorageAccountName": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the Azure Storage Account that you want to capture the log blobs from."
+            },
+            "minLength": 3,
+            "maxLength": 24
+        },
+        "targetContainerName": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the container that contains the logs you want to forward."
+            },
+            "minLength": 3,
+            "maxLength": 63
+        },
+        "location": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Region where all resources included in this template will be deployed. Leave this blank to use the same region as the one of the resource group."
+            }
+        },
+        "cortexHttpEndpoint": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Cortex HTTP endpoint"
+            }
+        },
+        "remotePackage": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Remote package ZIP file URL"
+            }
+        }
+    },
+    "variables": {
+        "targetStorageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', parameters('targetStorageAccountName'))]",
+        "onePerResourceGroupUniqueSuffix": "[uniqueString(resourceGroup().id)]",
+        "onePerResourceGroupAndStorageAccountAndContainer": "[uniqueString(resourceGroup().id, parameters('targetStorageAccountName'), parameters('targetContainerName'))]",
+        "functionAppName": "[format('cortex-nfl-{0}-{1}', parameters('uniqueName'), variables('onePerResourceGroupAndStorageAccountAndContainer'))]",
+        "location": "[if(equals(parameters('location'), ''), resourceGroup().location, parameters('location'))]",
+        "internalStorageAccountName": "[format('cortexpub{0}', variables('onePerResourceGroupAndStorageAccountAndContainer'))]",
+        "servicePlanName": "[concat('cortex-sp-dynamic', variables('onePerResourceGroupUniqueSuffix'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2021-04-01",
+            "name": "[variables('internalStorageAccountName')]",
+            "location": "[variables('location')]",
+            "sku": {
+                "name": "Standard_LRS"
+            },
+            "kind": "StorageV2",
+            "properties": {
+                "publicNetworkAccess": "Enabled",
+                "allowBlobPublicAccess": false
+            }
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "apiVersion": "2022-09-01",
+            "kind": "functionapp,linux",
+            "location": "[variables('location')]",
+            "name": "[variables('servicePlanName')]",
+            "sku": {
+                "name": "Y1",
+                "tier": "Dynamic"
+            },
+            "properties": {
+                "reserved": true,
+                "name": "[variables('servicePlanName')]",
+                "targetWorkerCount": 1,
+                "targetWorkerSizeId": 1,
+                "workerSize": "1",
+                "numberOfWorkers": 1,
+                "computeMode": "Dynamic"
+            }
+        },
+        {
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2020-12-01",
+            "name": "[variables('functionAppName')]",
+            "location": "[variables('location')]",
+            "kind": "functionapp,linux",
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('internalStorageAccountName'))]",
+                "[resourceId('Microsoft.Web/serverfarms', variables('servicePlanName'))]"
+            ],
+            "properties": {
+                "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('servicePlanName'))]",
+                "siteConfig": {
+                    "vnetRouteAllEnabled": true,
+                    "linuxFxVersion": "PYTHON|3.11",
+                    "appSettings": [
+                        {
+                            "name": "TargetAccountConnection",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('targetStorageAccountName'), ';AccountKey=', listKeys(variables('targetStorageAccountId'),'2015-05-01-preview').key1)]"
+                        },
+                        {
+                            "name": "CONTAINER_NAME",
+                            "value": "[parameters('targetContainerName')]"
+                        },
+                        {
+                            "name": "CORTEX_ACCESS_TOKEN",
+                            "value": "[parameters('cortexAccessToken')]"
+                        },
+                        {
+                            "name": "CORTEX_HTTP_ENDPOINT",
+                            "value": "[parameters('cortexHttpEndpoint')]"
+                        },
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('internalStorageAccountName'),';AccountKey=',listkeys(resourceId('Microsoft.Storage/storageAccounts', variables('internalStorageAccountName')), '2021-04-01').keys[0].value,';EndpointSuffix=',environment().suffixes.storage)]"
+                        },
+                        {
+                            "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('internalStorageAccountName'),';AccountKey=',listkeys(resourceId('Microsoft.Storage/storageAccounts', variables('internalStorageAccountName')), '2021-04-01').keys[0].value,';EndpointSuffix=',environment().suffixes.storage)]"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "python"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~4"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME_VERSION",
+                            "value": "3.11"
+                        },
+                        {
+                            "name": "WEBSITE_RUN_FROM_PACKAGE",
+                            "value": "[parameters('remotePackage')]"
+                        }
+                    ],
+                    "alwaysOn": false,
+                    "ftpsState": "Disabled"
+                },
+                "publicNetworkAccess": "Enabled",
+                "httpsOnly": true
+            }
+        }
+    ],
+    "outputs": {}
+}
