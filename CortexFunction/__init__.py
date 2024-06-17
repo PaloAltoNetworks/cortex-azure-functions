@@ -107,6 +107,7 @@ def create_record(record, outer_flow, inner_flow, flow_tuple):
     properties = record["properties"]
     version = properties["Version"]
 
+    # Log format reference: https://learn.microsoft.com/en-us/azure/network-watcher/nsg-flow-logs-overview#log-format
     denormalized = {
         "time": record["time"],
         "category": record["category"],
@@ -123,11 +124,6 @@ def create_record(record, outer_flow, inner_flow, flow_tuple):
         "transportProtocol": tuple_parts[5],
         "deviceDirection": tuple_parts[6],
         "deviceAction": tuple_parts[7],
-        "flowState": "",
-        "packetsStoD": "",
-        "bytesStoD": "",
-        "packetsDtoS": "",
-        "bytesDtoS": ""
     }
 
     if version >= 2:
