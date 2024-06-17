@@ -22,6 +22,7 @@
         },
         "targetContainerName": {
             "type": "string",
+            "defaultValue": "insights-logs-networksecuritygroupflowevent",
             "metadata": {
                 "description": "Name of the container that contains the logs you want to forward."
             },
@@ -44,7 +45,7 @@
         },
         "remotePackage": {
             "type": "string",
-            "defaultValue": "",
+            "defaultValue": "https://github.com/hafuta/AzureNetworkWatcherNSGFlowLogsConnector/releases/tag/rc-0.1",
             "metadata": {
                 "description": "Remote package ZIP file URL"
             }
