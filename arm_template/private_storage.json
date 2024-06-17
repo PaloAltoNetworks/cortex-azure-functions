@@ -45,7 +45,7 @@
         },
         "remotePackage": {
             "type": "string",
-            "defaultValue": "https://github.com/hafuta/AzureNetworkWatcherNSGFlowLogsConnector/releases/tag/rc-0.1",
+            "defaultValue": "https://github.com/hafuta/AzureNetworkWatcherNSGFlowLogsConnector/releases/latest/download/build.zip",
             "metadata": {
                 "description": "Remote package ZIP file URL"
             }
