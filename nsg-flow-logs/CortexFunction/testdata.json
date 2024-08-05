@@ -1,0 +1,234 @@
+{
+    "records": [
+        {
+            "time": "2024-06-09T07:14:30.0036054Z",
+            "systemId": "c5611209-738f-4b56-a92f-1e39c2eeb6d2",
+            "macAddress": "000D3A8D51B3",
+            "category": "NetworkSecurityGroupFlowEvent",
+            "resourceId": "/SUBSCRIPTIONS/93E05637-A9AC-478E-B59B-B584B3CBC3B6/RESOURCEGROUPS/TZVM_GROUP/PROVIDERS/MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/TZVM-NSG",
+            "operationName": "NetworkSecurityGroupFlowEvents",
+            "properties": {
+                "Version": 2,
+                "flows": [
+                    {
+                        "rule": "DefaultRule_DenyAllInBound",
+                        "flows": [
+                            {
+                                "mac": "000D3A8D51B3",
+                                "flowTuples": [
+                                    "1717917209,79.110.62.150,10.0.0.10,56292,3389,T,I,D,B,,,,",
+                                    "1717917212,35.163.22.123,10.0.0.10,62407,3389,T,I,D,B,,,,",
+                                    "1717917215,35.163.22.123,10.0.0.10,62407,3389,T,I,D,B,,,,",
+                                    "1717917221,35.163.22.123,10.0.0.10,62407,3389,T,I,D,B,,,,",
+                                    "1717917264,144.86.173.107,10.0.0.10,56605,3389,T,I,D,B,,,,"
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "time": "2024-06-09T07:19:30.0326606Z",
+            "systemId": "c5611209-738f-4b56-a92f-1e39c2eeb6d2",
+            "macAddress": "000D3A8D51B3",
+            "category": "NetworkSecurityGroupFlowEvent",
+            "resourceId": "/SUBSCRIPTIONS/93E05637-A9AC-478E-B59B-B584B3CBC3B6/RESOURCEGROUPS/TZVM_GROUP/PROVIDERS/MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/TZVM-NSG",
+            "operationName": "NetworkSecurityGroupFlowEvents",
+            "properties": {
+                "Version": 2,
+                "flows": [
+                    {
+                        "rule": "DefaultRule_DenyAllInBound",
+                        "flows": [
+                            {
+                                "mac": "000D3A8D51B3",
+                                "flowTuples": [
+                                    "1717917562,173.173.106.239,10.0.0.10,54227,3389,T,I,D,B,,,,",
+                                    "1717917566,173.173.106.239,10.0.0.10,54227,3389,T,I,D,B,,,,"
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "time": "2024-06-09T07:20:30.0530520Z",
+            "systemId": "c5611209-738f-4b56-a92f-1e39c2eeb6d2",
+            "macAddress": "000D3A8D51B3",
+            "category": "NetworkSecurityGroupFlowEvent",
+            "resourceId": "/SUBSCRIPTIONS/93E05637-A9AC-478E-B59B-B584B3CBC3B6/RESOURCEGROUPS/TZVM_GROUP/PROVIDERS/MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/TZVM-NSG",
+            "operationName": "NetworkSecurityGroupFlowEvents",
+            "properties": {
+                "Version": 2,
+                "flows": [
+                    {
+                        "rule": "DefaultRule_DenyAllInBound",
+                        "flows": [
+                            {
+                                "mac": "000D3A8D51B3",
+                                "flowTuples": [
+                                    "1717917572,173.173.106.239,10.0.0.10,54227,3389,T,I,D,B,,,,"
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "time": "2024-06-09T07:27:30.1198721Z",
+            "systemId": "c5611209-738f-4b56-a92f-1e39c2eeb6d2",
+            "macAddress": "000D3A8D51B3",
+            "category": "NetworkSecurityGroupFlowEvent",
+            "resourceId": "/SUBSCRIPTIONS/93E05637-A9AC-478E-B59B-B584B3CBC3B6/RESOURCEGROUPS/TZVM_GROUP/PROVIDERS/MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/TZVM-NSG",
+            "operationName": "NetworkSecurityGroupFlowEvents",
+            "properties": {
+                "Version": 2,
+                "flows": [
+                    {
+                        "rule": "DefaultRule_DenyAllInBound",
+                        "flows": [
+                            {
+                                "mac": "000D3A8D51B3",
+                                "flowTuples": [
+                                    "1717917991,72.22.77.54,10.0.0.10,60111,3389,T,I,D,B,,,,",
+                                    "1717917994,72.22.77.54,10.0.0.10,60111,3389,T,I,D,B,,,,",
+                                    "1717918000,72.22.77.54,10.0.0.10,60111,3389,T,I,D,B,,,,"
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "time": "2024-06-09T07:39:30.1715235Z",
+            "systemId": "c5611209-738f-4b56-a92f-1e39c2eeb6d2",
+            "macAddress": "000D3A8D51B3",
+            "category": "NetworkSecurityGroupFlowEvent",
+            "resourceId": "/SUBSCRIPTIONS/93E05637-A9AC-478E-B59B-B584B3CBC3B6/RESOURCEGROUPS/TZVM_GROUP/PROVIDERS/MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/TZVM-NSG",
+            "operationName": "NetworkSecurityGroupFlowEvents",
+            "properties": {
+                "Version": 2,
+                "flows": [
+                    {
+                        "rule": "DefaultRule_DenyAllInBound",
+                        "flows": [
+                            {
+                                "mac": "000D3A8D51B3",
+                                "flowTuples": [
+                                    "1717918765,72.46.51.115,10.0.0.10,57868,3389,T,I,D,B,,,,"
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "time": "2024-06-09T07:40:30.2115124Z",
+            "systemId": "c5611209-738f-4b56-a92f-1e39c2eeb6d2",
+            "macAddress": "000D3A8D51B3",
+            "category": "NetworkSecurityGroupFlowEvent",
+            "resourceId": "/SUBSCRIPTIONS/93E05637-A9AC-478E-B59B-B584B3CBC3B6/RESOURCEGROUPS/TZVM_GROUP/PROVIDERS/MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/TZVM-NSG",
+            "operationName": "NetworkSecurityGroupFlowEvents",
+            "properties": {
+                "Version": 2,
+                "flows": [
+                    {
+                        "rule": "DefaultRule_DenyAllInBound",
+                        "flows": [
+                            {
+                                "mac": "000D3A8D51B3",
+                                "flowTuples": [
+                                    "1717918768,72.46.51.115,10.0.0.10,57868,3389,T,I,D,B,,,,",
+                                    "1717918774,72.46.51.115,10.0.0.10,57868,3389,T,I,D,B,,,,"
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "time": "2024-06-09T07:46:30.2188072Z",
+            "systemId": "c5611209-738f-4b56-a92f-1e39c2eeb6d2",
+            "macAddress": "000D3A8D51B3",
+            "category": "NetworkSecurityGroupFlowEvent",
+            "resourceId": "/SUBSCRIPTIONS/93E05637-A9AC-478E-B59B-B584B3CBC3B6/RESOURCEGROUPS/TZVM_GROUP/PROVIDERS/MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/TZVM-NSG",
+            "operationName": "NetworkSecurityGroupFlowEvents",
+            "properties": {
+                "Version": 2,
+                "flows": [
+                    {
+                        "rule": "DefaultRule_DenyAllInBound",
+                        "flows": [
+                            {
+                                "mac": "000D3A8D51B3",
+                                "flowTuples": [
+                                    "1717919150,148.72.155.117,10.0.0.10,61140,3389,T,I,D,B,,,,",
+                                    "1717919153,148.72.155.117,10.0.0.10,61140,3389,T,I,D,B,,,,",
+                                    "1717919159,148.72.155.117,10.0.0.10,61140,3389,T,I,D,B,,,,"
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "time": "2024-06-09T07:53:30.3103797Z",
+            "systemId": "c5611209-738f-4b56-a92f-1e39c2eeb6d2",
+            "macAddress": "000D3A8D51B3",
+            "category": "NetworkSecurityGroupFlowEvent",
+            "resourceId": "/SUBSCRIPTIONS/93E05637-A9AC-478E-B59B-B584B3CBC3B6/RESOURCEGROUPS/TZVM_GROUP/PROVIDERS/MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/TZVM-NSG",
+            "operationName": "NetworkSecurityGroupFlowEvents",
+            "properties": {
+                "Version": 2,
+                "flows": [
+                    {
+                        "rule": "DefaultRule_DenyAllInBound",
+                        "flows": [
+                            {
+                                "mac": "000D3A8D51B3",
+                                "flowTuples": [
+                                    "1717919578,50.78.37.65,10.0.0.10,9575,3389,T,I,D,B,,,,",
+                                    "1717919579,50.78.37.65,10.0.0.10,9575,3389,T,I,D,B,,,,",
+                                    "1717919581,50.78.37.65,10.0.0.10,9575,3389,T,I,D,B,,,,",
+                                    "1717919585,50.78.37.65,10.0.0.10,9575,3389,T,I,D,B,,,,",
+                                    "1717919593,50.78.37.65,10.0.0.10,9575,3389,T,I,D,B,,,,"
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "time": "2024-06-09T07:56:30.3147345Z",
+            "systemId": "c5611209-738f-4b56-a92f-1e39c2eeb6d2",
+            "macAddress": "000D3A8D51B3",
+            "category": "NetworkSecurityGroupFlowEvent",
+            "resourceId": "/SUBSCRIPTIONS/93E05637-A9AC-478E-B59B-B584B3CBC3B6/RESOURCEGROUPS/TZVM_GROUP/PROVIDERS/MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/TZVM-NSG",
+            "operationName": "NetworkSecurityGroupFlowEvents",
+            "properties": {
+                "Version": 2,
+                "flows": [
+                    {
+                        "rule": "DefaultRule_DenyAllInBound",
+                        "flows": [
+                            {
+                                "mac": "000D3A8D51B3",
+                                "flowTuples": [
+                                    "1717919730,194.169.175.34,10.0.0.10,59278,3389,T,I,D,B,,,,"
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+    ]
+}
