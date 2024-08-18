@@ -1,4 +1,4 @@
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fgithub.com%2FPaloAltoNetworks%2Fcortex-azure-functions%2Fblob%2Fe5409c69b2bc278655a3b79dd1932700621ddd45%2Fnsg-flow-logs%2Farm_template%2Fprivate_storage.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FPaloAltoNetworks%2Fcortex-azure-functions%2Fe5409c69b2bc278655a3b79dd1932700621ddd45%2Fnsg-flow-logs%2Farm_template%2Fprivate_storage.json)
 
 
 
