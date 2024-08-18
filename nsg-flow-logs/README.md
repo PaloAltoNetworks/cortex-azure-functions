@@ -1,4 +1,4 @@
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fportal.azure.com%2F%23create%2FMicrosoft.Template%2Furi%2Fhttps%253A%252F%252Fraw.githubusercontent.com%252Fhafuta%252FAzureNetworkWatcherNSGFlowLogsConnector%252Frc-0.1%252Farm_template%252Fprivate_storage.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fgithub.com%2FPaloAltoNetworks%2Fcortex-azure-functions%2Fblob%2Fe5409c69b2bc278655a3b79dd1932700621ddd45%2Fnsg-flow-logs%2Farm_template%2Fprivate_storage.json)
 
 
 
