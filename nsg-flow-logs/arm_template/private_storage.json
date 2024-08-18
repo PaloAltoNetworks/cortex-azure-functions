@@ -45,7 +45,7 @@
         },
         "remotePackage": {
             "type": "string",
-            "defaultValue": "https://github.com/hafuta/AzureNetworkWatcherNSGFlowLogsConnector/releases/latest/download/build.zip",
+            "defaultValue": "https://github.com/PaloAltoNetworks/cortex-azure-functions/releases/tag/1.0.0-rc.1/download/nsg-flow-logs.zip",
             "metadata": {
                 "description": "Remote package ZIP file URL"
             }
