@@ -1,4 +1,6 @@
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://github.com/PaloAltoNetworks/cortex-azure-functions/blob/121539d3a7404350a6823386cb320a1e21e4117d/nsg-flow-logs/arm_template/private_storage.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fportal.azure.com%2F%23create%2FMicrosoft.Template%2Furi%2Fhttps%253A%252F%252Fraw.githubusercontent.com%252Fhafuta%252FAzureNetworkWatcherNSGFlowLogsConnector%252Frc-0.1%252Farm_template%252Fprivate_storage.json)
+
+
 
 ## Cortex Azure NSG Flow Logs Collector
 This repository contains an Azure Function that collects NSG flow logs from Azure and forwards them to Cortex. The Azure Function is deployed using an ARM template that creates all the necessary Azure resources, including a private storage account, storage endpoints, subnets, and an internal storage account. This repository supports deployments where a private storage account is required, ensuring secure communication between the Azure Function and the storage resources.
