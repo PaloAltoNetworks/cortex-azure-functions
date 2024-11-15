@@ -12,6 +12,14 @@
                 "description": "Cortex HTTP authorization key"
             }
         },
+        "targetStorageAccountResourceGroup": {
+            "type": "string",
+            "metadata": {
+                "description": "Name of the resource group where the Azure Storage account that you want to capture the log blobs from."
+            },
+            "minLength": 1,
+            "maxLength": 90
+        },
         "targetStorageAccountName": {
             "type": "string",
             "metadata": {
@@ -52,7 +60,7 @@
         }
     },
     "variables": {
-        "targetStorageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', parameters('targetStorageAccountName'))]",
+        "targetStorageAccountId": "[resourceId(parameters('targetStorageAccountResourceGroup'), 'Microsoft.Storage/storageAccounts', parameters('targetStorageAccountName'))]",
         "onePerResourceGroupUniqueSuffix": "[uniqueString(resourceGroup().id)]",
         "onePerResourceGroupAndStorageAccountAndContainer": "[uniqueString(resourceGroup().id, parameters('targetStorageAccountName'), parameters('targetContainerName'))]",
         "functionAppName": "[format('cortex-nfl-{0}-{1}', parameters('uniqueName'), variables('onePerResourceGroupAndStorageAccountAndContainer'))]",
@@ -447,7 +455,7 @@
                     "appSettings": [
                         {
                             "name": "TargetAccountConnection",
-                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('targetStorageAccountName'), ';AccountKey=', listKeys(variables('targetStorageAccountId'),'2015-05-01-preview').key1)]"
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('targetStorageAccountName'), ';AccountKey=', listKeys(variables('targetStorageAccountId'),'2021-08-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]"
                         },
                         {
                             "name": "CONTAINER_NAME",
