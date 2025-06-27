@@ -53,7 +53,7 @@
         },
         "remotePackage": {
             "type": "string",
-            "defaultValue": "https://github.com/PaloAltoNetworks/cortex-azure-functions/releases/download/vnet-flow-logs-1.0.0-beta.1/vnet-flow-logs.zip",
+            "defaultValue": "https://github.com/PaloAltoNetworks/cortex-azure-functions/releases/download/azure-flow-logs-1.0.0-beta.1/vnet-flow-logs.zip",
             "metadata": {
                 "description": "Remote package ZIP file URL"
             }
