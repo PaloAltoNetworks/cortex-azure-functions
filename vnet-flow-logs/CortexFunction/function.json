@@ -1,0 +1,13 @@
+{
+    "scriptFile": "__init__.py",
+    "entryPoint": "main",
+    "bindings": [
+        {
+            "name": "blob",
+            "type": "blobTrigger",
+            "direction": "in",
+            "path": "insights-logs-flowlogflowevent/{name}",
+            "connection": "TargetAccountConnection"
+        }
+    ]
+}
