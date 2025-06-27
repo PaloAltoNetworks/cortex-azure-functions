@@ -30,7 +30,7 @@
         },
         "targetContainerName": {
             "type": "string",
-            "defaultValue": "insights-logs-networksecuritygroupflowevent",
+            "defaultValue": "insights-logs-flowlogflowevent",
             "metadata": {
                 "description": "Name of the container that contains the logs you want to forward."
             },
@@ -53,7 +53,7 @@
         },
         "remotePackage": {
             "type": "string",
-            "defaultValue": "https://github.com/PaloAltoNetworks/cortex-azure-functions/releases/download/nsg-flow-logs-1.0.0-beta.2/nsg-flow-logs.zip",
+            "defaultValue": "https://github.com/PaloAltoNetworks/cortex-azure-functions/releases/download/vnet-flow-logs-1.0.0-beta.1/vnet-flow-logs.zip",
             "metadata": {
                 "description": "Remote package ZIP file URL"
             }
