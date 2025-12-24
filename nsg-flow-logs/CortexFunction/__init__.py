@@ -12,7 +12,7 @@ app = func.FunctionApp()
 # Configuration
 CORTEX_HTTP_ENDPOINT = os.environ.get('CORTEX_HTTP_ENDPOINT')
 CORTEX_ACCESS_TOKEN = os.environ.get('CORTEX_ACCESS_TOKEN')
-CORTEX_MAX_PAYLOAD_SIZE_BYTES = 10 * 1000000
+CORTEX_MAX_PAYLOAD_SIZE_BYTES = int(os.environ.get('MAX_PAYLOAD_SIZE', 10 * 1000000))
 HTTP_MAX_RETRIES = int(os.environ.get('HTTP_MAX_RETRIES', 3))
 RETRY_INTERVAL = int(os.environ.get('RETRY_INTERVAL', 2000))  # default: 2 seconds
 
@@ -30,6 +30,11 @@ def main(blob: func.InputStream):
 
     try:
         content = blob.read().decode('utf-8')
+
+        if isinstance(content, str) and not content.strip():
+            logging.info(f'received an empty blob: {blob.name}')
+            return
+
         log_lines = json.loads(content)
         if not log_lines:
             logging.warning('empty blob, no logs')
