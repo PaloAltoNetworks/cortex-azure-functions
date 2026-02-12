@@ -6,6 +6,7 @@ import logging
 import requests
 import time
 from io import BytesIO
+from azure.storage.blob import BlobServiceClient
 
 app = func.FunctionApp()
 
@@ -15,34 +16,52 @@ CORTEX_ACCESS_TOKEN = os.environ.get('CORTEX_ACCESS_TOKEN')
 CORTEX_MAX_PAYLOAD_SIZE_BYTES = int(os.environ.get('MAX_PAYLOAD_SIZE', 10 * 1000000))
 HTTP_MAX_RETRIES = int(os.environ.get('HTTP_MAX_RETRIES', 3))
 RETRY_INTERVAL = int(os.environ.get('RETRY_INTERVAL', 2000))  # default: 2 seconds
+CONNECTION_STR = os.getenv('TargetAccountConnection')
 
 
-def main(blob: func.InputStream):
-    logging.info(f"Python blob trigger function processing blob, Name: {blob.name}, Size: {blob.length} bytes")
+def main(event: func.EventGridEvent):
+    # Event Grid sends a JSON payload. We extract the URL of the new blob.
+    event_data = event.get_json()
+    blob_url = event_data.get('url')
 
-    if not CORTEX_HTTP_ENDPOINT:
-        logging.error('missing cortex http endpoint configuration')
-        return
+    logging.info(f"Python Event Grid trigger processing blob: {blob_url}")
 
-    if not CORTEX_ACCESS_TOKEN:
-        logging.error('missing cortex access token')
+    if not all([CORTEX_HTTP_ENDPOINT, CORTEX_ACCESS_TOKEN, CONNECTION_STR]):
+        logging.error('Missing configuration: check endpoint, token, or connection string')
         return
 
     try:
-        content = blob.read().decode('utf-8')
+        # 1. Initialize Storage Client and download content
+        # Event Grid doesn't "pass" the data, so we fetch it
+        blob_client = BlobServiceClient.from_connection_string(CONNECTION_STR).get_blob_from_url(blob_url)
 
-        if isinstance(content, str) and not content.strip():
-            logging.info(f'received an empty blob: {blob.name}')
+        # Download and check size
+        blob_properties = blob_client.get_blob_properties()
+        if blob_properties.size <= 30:
+            logging.info(f"Skipping empty/header-only log: {blob_url}")
             return
 
-        log_lines = json.loads(content)
-        if not log_lines:
-            logging.warning('empty blob, no logs')
+        content = blob_client.download_blob().readall().decode('utf-8')
+
+        # 2. Basic content validation
+        if not content.strip():
             return
-        denormalized = denormalize_vnet_records(log_lines)
+
+        log_data = json.loads(content)
+        records = log_data.get('records', [])
+
+        if not records:
+            logging.warning(f'No flow records found in {blob_url}')
+            return
+
+        # 3. Process logs
+        denormalized = denormalize_vnet_records(log_data)
         compress_and_send(denormalized)
+
+        logging.info(f"Successfully processed {len(records)} records from {blob_url}")
+
     except Exception as e:
-        logging.error(f'Error processing blob: {e}')
+        logging.error(f'Error processing blob from Event Grid: {e}')
 
 
 def serialize_in_batches(objects, max_batch_size=CORTEX_MAX_PAYLOAD_SIZE_BYTES):
