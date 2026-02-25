@@ -35,7 +35,14 @@ def main(blob: func.InputStream):
             logging.info(f'received an empty blob: {blob.name}')
             return
 
-        log_lines = json.loads(content)
+        try:
+            log_lines = json.loads(content)
+        except json.JSONDecodeError:
+            # This is expected for active Flow Logs.
+            # We log it as info and exit. The trigger will fire again on the next append.
+            logging.info(f"Blob {blob.name} is currently incomplete (partial JSON). Skipping until next append.")
+            return
+
         if not log_lines:
             logging.warning('empty blob, no logs')
             return
