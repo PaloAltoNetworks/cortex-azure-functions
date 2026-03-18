@@ -16,6 +16,7 @@ CORTEX_ACCESS_TOKEN = os.environ.get('CORTEX_ACCESS_TOKEN')
 CORTEX_MAX_PAYLOAD_SIZE_BYTES = int(os.environ.get('MAX_PAYLOAD_SIZE', 10 * 1000000))
 HTTP_MAX_RETRIES = int(os.environ.get('HTTP_MAX_RETRIES', 3))
 RETRY_INTERVAL = int(os.environ.get('RETRY_INTERVAL', 2000))  # default: 2 seconds
+BATCH_SIZE = int(os.environ.get('BATCH_SIZE', 1000))  # Process records in batches of 1000
 
 
 def main(blob: func.InputStream):
@@ -47,10 +48,43 @@ def main(blob: func.InputStream):
         if not log_lines:
             logging.warning('empty blob, no logs')
             return
-        denormalized = denormalize_vnet_records(log_lines)
-        compress_and_send(denormalized)
+
+        # Process records in batches to reduce memory footprint
+        process_records_in_batches(log_lines)
+
     except Exception as e:
         logging.error(f'Error processing blob: {e}')
+
+
+def process_records_in_batches(data):
+    """
+    Process VNET flow log records in batches to minimize memory usage.
+    Instead of denormalizing all records at once, we process BATCH_SIZE records at a time,
+    send them, and clear them from memory before processing the next batch.
+    """
+    batch = []
+    total_processed = 0
+
+    for record in data['records']:
+        for outer_flow in record['flowRecords']['flows']:
+            for inner_flow in outer_flow['flowGroups']:
+                for flow_tuple in inner_flow['flowTuples']:
+                    # Create denormalized record
+                    denormalized_record = create_vnet_record(record, inner_flow, flow_tuple)
+                    batch.append(denormalized_record)
+
+                    # When batch reaches BATCH_SIZE, send it and clear
+                    if len(batch) >= BATCH_SIZE:
+                        compress_and_send(batch)
+                        total_processed += len(batch)
+                        logging.info(f'Processed and sent {total_processed} records so far')
+                        batch.clear()  # Clear batch to free memory
+
+    # Send any remaining records in the final batch
+    if batch:
+        compress_and_send(batch)
+        total_processed += len(batch)
+        logging.info(f'Completed processing. Total records sent: {total_processed}')
 
 
 def serialize_in_batches(objects, max_batch_size=CORTEX_MAX_PAYLOAD_SIZE_BYTES):
@@ -149,13 +183,3 @@ def create_vnet_record(record, inner_flow, flow_tuple):
             denormalized['bytesDtoS'] = '0' if tuple_parts[12] == '' else tuple_parts[12]
 
     return denormalized
-
-
-def denormalize_vnet_records(data):
-    result = []
-    for record in data['records']:
-        for outer_flow in record['flowRecords']['flows']:
-            for inner_flow in outer_flow['flowGroups']:
-                for flow_tuple in inner_flow['flowTuples']:
-                    result.append(create_vnet_record(record, inner_flow, flow_tuple))
-    return result
