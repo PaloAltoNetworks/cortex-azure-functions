@@ -113,7 +113,9 @@ def main(blob: func.InputStream):
             process_records_in_batches({'records': new_records})
             send_succeeded = True
         except Exception as e:
-            logging.error(f'Blob {blob.name}: failed to process/send records. Checkpoint will NOT be updated. Error: {e}')
+            logging.error(
+                f'Blob {blob.name}: failed to process/send records. Checkpoint will NOT be updated. Error: {e}'
+            )
 
         # Update checkpoint only after all batches have been sent successfully
         if send_succeeded and checkpoint_mgr is not None:
@@ -159,10 +161,7 @@ def _build_checkpoint_manager() -> CheckpointManager | None:
             cleanup_interval_hours=CHECKPOINT_CLEANUP_INTERVAL_HOURS,
         )
     except Exception as e:
-        logging.error(
-            f'Failed to initialize CheckpointManager, processing all records without checkpoint. '
-            f'Error: {e}'
-        )
+        logging.error(f'Failed to initialize CheckpointManager, processing all records without checkpoint. Error: {e}')
         return None
 
 
@@ -256,10 +255,7 @@ def retry_max(func, max_retries, interval, *args, **kwargs):
                 logging.error(f'Failed to send logs after {max_retries} attempt(s). Last error: {e}')
                 raise e
             else:
-                logging.warning(
-                    f'Attempt #{num_retries}/{max_retries} failed: {e}. '
-                    f'Retrying in {interval} ms.'
-                )
+                logging.warning(f'Attempt #{num_retries}/{max_retries} failed: {e}. Retrying in {interval} ms.')
                 time.sleep(interval / 1000)
 
 

@@ -98,13 +98,9 @@ class CheckpointManager:
         """
         row_key = self._make_row_key(blob_name)
         try:
-            entity = self._table_client.get_entity(
-                partition_key=self.PARTITION_KEY, row_key=row_key
-            )
+            entity = self._table_client.get_entity(partition_key=self.PARTITION_KEY, row_key=row_key)
             count = int(entity.get('processed_record_count', 0))
-            logging.info(
-                f'Checkpoint found for {blob_name}: {count} records already processed'
-            )
+            logging.info(f'Checkpoint found for {blob_name}: {count} records already processed')
             return count
         except ResourceNotFoundError:
             logging.info(f'No checkpoint found for {blob_name}, starting from 0')
@@ -158,9 +154,7 @@ class CheckpointManager:
         cutoff = datetime.now(UTC) - timedelta(days=retention_days)
         cutoff_iso = cutoff.isoformat()
 
-        logging.info(
-            f'Running stale checkpoint cleanup: deleting rows with last_updated < {cutoff_iso}'
-        )
+        logging.info(f'Running stale checkpoint cleanup: deleting rows with last_updated < {cutoff_iso}')
 
         # Server-side OData filter — only stale rows are returned (#2)
         odata_filter = f"last_updated lt '{cutoff_iso}'"
@@ -182,9 +176,7 @@ class CheckpointManager:
                 deleted += len(chunk)
             except ResourceNotFoundError:
                 # One or more rows already deleted by a concurrent invocation — safe to ignore
-                logging.debug(
-                    'Some stale checkpoint rows were already deleted by a concurrent cleanup run'
-                )
+                logging.debug('Some stale checkpoint rows were already deleted by a concurrent cleanup run')
                 deleted += len(chunk)
 
         logging.info(f'Stale checkpoint cleanup complete: {deleted} row(s) deleted')
@@ -223,7 +215,8 @@ class CheckpointManager:
 # Module-level helpers
 # ------------------------------------------------------------------
 
+
 def _chunks(lst: list, size: int):
     """Yield successive *size*-length chunks from *lst*."""
     for i in range(0, len(lst), size):
-        yield lst[i:i + size]
+        yield lst[i : i + size]

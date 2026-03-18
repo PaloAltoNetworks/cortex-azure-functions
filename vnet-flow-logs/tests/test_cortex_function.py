@@ -648,9 +648,7 @@ class TestCheckpointManager:
         mock_service_client.get_table_client.return_value = mock_table_client
         mock_service_client.create_table = Mock()
 
-        azure_data_tables_stub.TableServiceClient = Mock(
-            from_connection_string=Mock(return_value=mock_service_client)
-        )
+        azure_data_tables_stub.TableServiceClient = Mock(from_connection_string=Mock(return_value=mock_service_client))
 
         sys.modules.setdefault('azure', azure_stub)
         sys.modules['azure.data'] = azure_data_stub
@@ -662,8 +660,9 @@ class TestCheckpointManager:
         if 'cortex_function.checkpoint' in sys.modules:
             del sys.modules['cortex_function.checkpoint']
 
-        from cortex_function.checkpoint import CheckpointManager as CM
-        mgr = CM.__new__(CM)
+        from cortex_function.checkpoint import CheckpointManager
+
+        mgr = CheckpointManager.__new__(CheckpointManager)
         mgr._table_name = 'vnetflowcheckpoints'
         mgr._retention_days = retention_days
         mgr._cleanup_interval_hours = cleanup_interval_hours
@@ -823,6 +822,7 @@ class TestCheckpointManager:
         # Patch maybe_cleanup_stale and datetime so hour == 0 (0 % 6 == 0)
         with patch.object(mgr, 'maybe_cleanup_stale') as mock_cleanup:
             from datetime import datetime
+
             fixed_dt = datetime(2024, 1, 15, 0, 30, 0, tzinfo=UTC)  # hour=0
             with patch('cortex_function.checkpoint.datetime') as mock_dt:
                 mock_dt.now.return_value = fixed_dt
@@ -847,6 +847,7 @@ class TestCheckpointManager:
 
         with patch.object(mgr, 'maybe_cleanup_stale') as mock_cleanup:
             from datetime import datetime
+
             fixed_dt = datetime(2024, 1, 15, 1, 30, 0, tzinfo=UTC)  # hour=1, 1%6 != 0
             with patch('cortex_function.checkpoint.datetime') as mock_dt:
                 mock_dt.now.return_value = fixed_dt
@@ -1113,6 +1114,7 @@ class TestCheckpointBehavior:
             import importlib
 
             import cortex_function
+
             importlib.reload(cortex_function)
 
             blob = self._make_blob(SAMPLE_VNET_FLOW_LOG_V2)
@@ -1122,7 +1124,6 @@ class TestCheckpointBehavior:
         for req in captured_requests:
             all_records.extend(decompress_and_parse_payload(req['data']))
         assert len(all_records) == 4
-
 
     def test_partial_batch_failure_does_not_update_checkpoint(self, mock_env, mock_checkpoint_mgr):
         """
@@ -1144,7 +1145,13 @@ class TestCheckpointBehavior:
                     'macAddress': '00-0D-3A-1B-2C-3D',
                     'flowLogVersion': 1,
                     'flowRecords': {
-                        'flows': [{'flowGroups': [{'rule': 'Rule1', 'flowTuples': ['1705315200,10.0.0.1,20.0.0.1,1000,443,T,O,A']}]}]
+                        'flows': [
+                            {
+                                'flowGroups': [
+                                    {'rule': 'Rule1', 'flowTuples': ['1705315200,10.0.0.1,20.0.0.1,1000,443,T,O,A']}
+                                ]
+                            }
+                        ]
                     },
                 },
                 {
@@ -1155,7 +1162,13 @@ class TestCheckpointBehavior:
                     'macAddress': '00-0D-3A-1B-2C-3E',
                     'flowLogVersion': 1,
                     'flowRecords': {
-                        'flows': [{'flowGroups': [{'rule': 'Rule2', 'flowTuples': ['1705315201,10.0.0.2,20.0.0.2,1001,443,T,O,A']}]}]
+                        'flows': [
+                            {
+                                'flowGroups': [
+                                    {'rule': 'Rule2', 'flowTuples': ['1705315201,10.0.0.2,20.0.0.2,1001,443,T,O,A']}
+                                ]
+                            }
+                        ]
                     },
                 },
             ]
@@ -1178,6 +1191,7 @@ class TestCheckpointBehavior:
             import importlib
 
             import cortex_function
+
             importlib.reload(cortex_function)
 
             with patch('cortex_function.requests.post', side_effect=fail_on_second_call):
@@ -1186,9 +1200,7 @@ class TestCheckpointBehavior:
         # Checkpoint must NOT be updated because the overall send did not fully succeed
         mock_checkpoint_mgr.update.assert_not_called()
 
-    def test_checkpoint_manager_init_failure_falls_back_to_all_records(
-        self, mock_env, captured_requests
-    ):
+    def test_checkpoint_manager_init_failure_falls_back_to_all_records(self, mock_env, captured_requests):
         """
         #5 — CheckpointManager init failure: if _build_checkpoint_manager() raises
         (e.g. transient Table Storage error during _ensure_table), main() falls back
