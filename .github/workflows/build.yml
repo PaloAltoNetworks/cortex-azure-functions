@@ -28,10 +28,34 @@ jobs:
     - name: Run linting
       run: mise run lint-check
 
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6.0.2
+    
+    - name: Install mise
+      uses: jdx/mise-action@v4.0.0
+    
+    - name: Install pip-audit
+      run: pip install pip-audit
+    
+    - name: Scan vnet-flow-logs dependencies
+      run: |
+        echo "Scanning vnet-flow-logs for vulnerabilities..."
+        pip-audit -r vnet-flow-logs/requirements.txt --desc || true
+    
+    - name: Scan nsg-flow-logs dependencies
+      run: |
+        echo "Scanning nsg-flow-logs for vulnerabilities..."
+        pip-audit -r nsg-flow-logs/requirements.txt --desc || true
+
   test:
     name: Run Tests
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [lint, security]
     
     steps:
     - name: Checkout code
