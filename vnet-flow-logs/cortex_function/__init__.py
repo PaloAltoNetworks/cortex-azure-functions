@@ -183,17 +183,3 @@ def create_vnet_record(record, inner_flow, flow_tuple):
             denormalized['bytesDtoS'] = '0' if tuple_parts[12] == '' else tuple_parts[12]
 
     return denormalized
-
-
-def denormalize_vnet_records(data):
-    """
-    Legacy function kept for backward compatibility with tests.
-    New implementation uses process_records_in_batches() for better memory efficiency.
-    """
-    result = []
-    for record in data['records']:
-        for outer_flow in record['flowRecords']['flows']:
-            for inner_flow in outer_flow['flowGroups']:
-                for flow_tuple in inner_flow['flowTuples']:
-                    result.append(create_vnet_record(record, inner_flow, flow_tuple))
-    return result

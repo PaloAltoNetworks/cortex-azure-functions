@@ -13,7 +13,7 @@ import pytest
 
 # Add parent directory to path to import cortex_function
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from cortex_function import denormalize_vnet_records, main
+from cortex_function import main
 
 # Sample vnet flow log data (version 2 format)
 SAMPLE_VNET_FLOW_LOG_V2 = {
@@ -383,60 +383,6 @@ class TestCortexFunctionE2E:
             all_received_records.extend(records)
 
         assert len(all_received_records) == 1000, f'Expected 1000 records, got {len(all_received_records)}'
-
-
-class TestDenormalizeVnetRecords:
-    """Unit tests for denormalize_vnet_records function"""
-
-    def test_denormalize_single_record_v2(self):
-        """Test denormalization of a single v2 record"""
-        data = {
-            'records': [
-                {
-                    'time': '2024-01-15T10:00:00.0000000Z',
-                    'category': 'FlowLogFlowEvent',
-                    'operationName': 'FlowLogFlowEvent',
-                    'flowLogResourceID': '/subscriptions/sub-id/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet1',
-                    'macAddress': '00-0D-3A-1B-2C-3D',
-                    'flowLogVersion': 2,
-                    'flowRecords': {
-                        'flows': [
-                            {
-                                'flowGroups': [
-                                    {
-                                        'rule': 'TestRule',
-                                        'flowTuples': [
-                                            '1705315200,10.0.0.4,20.30.40.50,54321,443,T,O,A,C,10,1500,5,750'
-                                        ],
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                }
-            ]
-        }
-
-        result = denormalize_vnet_records(data)
-
-        assert len(result) == 1
-        assert result[0]['sourceAddress'] == '10.0.0.4'
-        assert result[0]['flowState'] == 'C'
-        assert result[0]['packetsStoD'] == '10'
-
-    def test_denormalize_multiple_tuples(self):
-        """Test denormalization with multiple flow tuples"""
-        result = denormalize_vnet_records(SAMPLE_VNET_FLOW_LOG_V2)
-
-        # Should have 4 denormalized records
-        assert len(result) == 4
-
-        # Verify they're all from the correct sources
-        source_addresses = [r['sourceAddress'] for r in result]
-        assert '10.0.0.4' in source_addresses
-        assert '10.0.0.5' in source_addresses
-        assert '10.0.0.6' in source_addresses
-        assert '10.0.1.10' in source_addresses
 
 
 class TestLargeFileProcessing:
