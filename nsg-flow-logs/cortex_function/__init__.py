@@ -1,11 +1,12 @@
-import azure.functions as func
-import os
-import json
 import gzip
+import json
 import logging
-import requests
+import os
 import time
 from io import BytesIO
+
+import azure.functions as func
+import requests
 
 app = func.FunctionApp()
 
@@ -18,7 +19,7 @@ RETRY_INTERVAL = int(os.environ.get('RETRY_INTERVAL', 2000))  # default: 2 secon
 
 
 def main(blob: func.InputStream):
-    logging.info(f"Python blob trigger function processing blob, Name: {blob.name}, Size: {blob.length} bytes")
+    logging.info(f'Python blob trigger function processing blob, Name: {blob.name}, Size: {blob.length} bytes')
 
     if not CORTEX_HTTP_ENDPOINT:
         logging.error('missing cortex http endpoint configuration')
@@ -35,18 +36,11 @@ def main(blob: func.InputStream):
             logging.info(f'received an empty blob: {blob.name}')
             return
 
-        try:
-            log_lines = json.loads(content)
-        except json.JSONDecodeError:
-            # This is expected for active Flow Logs.
-            # We log it as info and exit. The trigger will fire again on the next append.
-            logging.info(f"Blob {blob.name} is currently incomplete (partial JSON). Skipping until next append.")
-            return
-
+        log_lines = json.loads(content)
         if not log_lines:
             logging.warning('empty blob, no logs')
             return
-        denormalized = denormalize_vnet_records(log_lines)
+        denormalized = denormalize_records(log_lines)
         compress_and_send(denormalized)
     except Exception as e:
         logging.error(f'Error processing blob: {e}')
@@ -89,7 +83,7 @@ def http_send(data):
     headers = {
         'Content-Type': 'application/json',
         'Content-Encoding': 'gzip',
-        'Authorization': f'Bearer {CORTEX_ACCESS_TOKEN}'
+        'Authorization': f'Bearer {CORTEX_ACCESS_TOKEN}',
     }
 
     response = requests.post(CORTEX_HTTP_ENDPOINT, data=data, headers=headers)
@@ -114,47 +108,48 @@ def retry_max(func, max_retries, interval, *args, **kwargs):
                 time.sleep(interval / 1000)
 
 
-def create_vnet_record(record, inner_flow, flow_tuple):
-    tuple_parts = flow_tuple.split(",")
-    version = record["flowLogVersion"]
+def create_record(record, outer_flow, inner_flow, flow_tuple):
+    tuple_parts = flow_tuple.split(',')
+    properties = record['properties']
+    version = properties['Version']
 
-    # Log format reference: https://learn.microsoft.com/en-us/azure/network-watcher/vnet-flow-logs-overview?tabs=Americas#log-format
+    # Log format reference: https://learn.microsoft.com/en-us/azure/network-watcher/nsg-flow-logs-overview#log-format
     denormalized = {
-        "time": record["time"],
-        "category": record["category"],
-        "operationName": record["operationName"],
-        "resourceId": record["flowLogResourceID"],
-        "version": float(version),
-        "nsgRuleName": inner_flow["rule"],
-        "mac": record["macAddress"],
-        "startTime": int(tuple_parts[0]),
-        "sourceAddress": tuple_parts[1],
-        "destinationAddress": tuple_parts[2],
-        "sourcePort": tuple_parts[3],
-        "destinationPort": tuple_parts[4],
-        "transportProtocol": tuple_parts[5],
-        "deviceDirection": tuple_parts[6],
-        "deviceAction": tuple_parts[7],
+        'time': record['time'],
+        'category': record['category'],
+        'operationName': record['operationName'],
+        'resourceId': record['resourceId'],
+        'version': float(version),
+        'nsgRuleName': outer_flow['rule'],
+        'mac': inner_flow['mac'],
+        'startTime': int(tuple_parts[0]),
+        'sourceAddress': tuple_parts[1],
+        'destinationAddress': tuple_parts[2],
+        'sourcePort': tuple_parts[3],
+        'destinationPort': tuple_parts[4],
+        'transportProtocol': tuple_parts[5],
+        'deviceDirection': tuple_parts[6],
+        'deviceAction': tuple_parts[7],
     }
 
     if version >= 2:
         flow_state = tuple_parts[8]
-        denormalized["flowState"] = flow_state
+        denormalized['flowState'] = flow_state
 
-        if flow_state != "B":
-            denormalized["packetsStoD"] = ("0" if tuple_parts[9] == "" else tuple_parts[9])
-            denormalized["bytesStoD"] = ("0" if tuple_parts[10] == "" else tuple_parts[10])
-            denormalized["packetsDtoS"] = ("0" if tuple_parts[11] == "" else tuple_parts[11])
-            denormalized["bytesDtoS"] = ("0" if tuple_parts[12] == "" else tuple_parts[12])
+        if flow_state != 'B':
+            denormalized['packetsStoD'] = '0' if tuple_parts[9] == '' else tuple_parts[9]
+            denormalized['bytesStoD'] = '0' if tuple_parts[10] == '' else tuple_parts[10]
+            denormalized['packetsDtoS'] = '0' if tuple_parts[11] == '' else tuple_parts[11]
+            denormalized['bytesDtoS'] = '0' if tuple_parts[12] == '' else tuple_parts[12]
 
     return denormalized
 
 
-def denormalize_vnet_records(data):
+def denormalize_records(data):
     result = []
-    for record in data["records"]:
-        for outer_flow in record["flowRecords"]["flows"]:
-            for inner_flow in outer_flow["flowGroups"]:
-                for flow_tuple in inner_flow["flowTuples"]:
-                    result.append(create_vnet_record(record, inner_flow, flow_tuple))
+    for record in data['records']:
+        for outer_flow in record['properties']['flows']:
+            for inner_flow in outer_flow['flows']:
+                for flow_tuple in inner_flow['flowTuples']:
+                    result.append(create_record(record, outer_flow, inner_flow, flow_tuple))
     return result

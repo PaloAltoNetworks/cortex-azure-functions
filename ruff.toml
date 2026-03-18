@@ -1,0 +1,48 @@
+# Ruff configuration for Python linting
+# https://docs.astral.sh/ruff/
+
+# Exclude common directories
+exclude = [
+    ".git",
+    ".pytest_cache",
+    "__pycache__",
+    ".python_packages",
+    "*.egg-info",
+    ".venv",
+    "venv",
+]
+
+# Target Python 3.11 (matching Azure Functions runtime)
+target-version = "py311"
+
+# Line length
+line-length = 120
+
+[lint]
+# Enable recommended rules
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+]
+
+# Ignore specific rules if needed
+ignore = [
+    "E501",  # Line too long (handled by formatter)
+]
+
+[format]
+# Use double quotes for strings
+quote-style = "single"
+
+# Indent with 4 spaces
+indent-style = "space"
+
+# Respect magic trailing comma
+skip-magic-trailing-comma = false
