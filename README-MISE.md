@@ -29,7 +29,7 @@ Then reload your shell:
 source ~/.zshrc  # or ~/.bashrc
 ```
 
-## Setup Python 3.11
+## Setup Python 3.13
 
 Once mise is installed and activated, navigate to the project directory and run:
 
@@ -37,7 +37,7 @@ Once mise is installed and activated, navigate to the project directory and run:
 mise install
 ```
 
-This will automatically install Python 3.11 as specified in the configuration files. The Python version is isolated to this project and won't affect your system Python.
+This will automatically install Python 3.13 as specified in the configuration files. The Python version is isolated to this project and won't affect your system Python.
 
 ## Available Tasks
 
@@ -74,7 +74,7 @@ Run `mise run help` or `mise tasks` to see all available tasks:
 brew install mise
 eval "$(mise activate zsh)"
 
-# Install Python 3.11 for this project
+# Install Python 3.13 for this project
 mise install
 
 # Install all project dependencies
@@ -120,7 +120,7 @@ The previous Makefile has been converted to mise tasks. All `make` commands now 
 
 ## Benefits of mise
 
-- **Isolated Python version**: Python 3.11 is installed and managed per-project, not system-wide
+- **Isolated Python version**: Python 3.13 is installed and managed per-project, not system-wide
 - **Automatic activation**: When you `cd` into the project, the correct Python version is automatically activated
 - **Cross-platform**: Works consistently on macOS, Linux, and WSL
 - **Task dependencies**: Tasks can depend on other tasks (e.g., `test` depends on `install-dev`)
