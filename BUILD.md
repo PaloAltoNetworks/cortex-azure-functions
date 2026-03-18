@@ -51,7 +51,7 @@ cd vnet-flow-logs
 docker run --rm \
   -v "$(pwd):/workspace" \
   -w /workspace \
-  python:3.13-slim \
+  python:3.11-slim \
   bash -c "pip install --target .python_packages/lib/site-packages -r requirements.txt"
 
 # Create deployment package
@@ -69,7 +69,7 @@ cd nsg-flow-logs
 docker run --rm \
   -v "$(pwd):/workspace" \
   -w /workspace \
-  python:3.13-slim \
+  python:3.11-slim \
   bash -c "pip install --target .python_packages/lib/site-packages -r requirements.txt"
 
 # Create deployment package

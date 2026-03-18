@@ -40,7 +40,7 @@ This will create Linux-compatible deployment packages using Docker, ensuring the
 
 - Docker (for building Linux-compatible packages)
 - mise (task runner and environment manager)
-- Python 3.13+ (for local development)
+- Python 3.11+ (for local development)
 
 ## CI/CD
 

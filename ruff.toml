@@ -12,8 +12,8 @@ exclude = [
     "venv",
 ]
 
-# Target Python 3.13 (matching Azure Functions runtime)
-target-version = "py313"
+# Target Python 3.11 (matching Azure Functions runtime)
+target-version = "py311"
 
 # Line length
 line-length = 120
