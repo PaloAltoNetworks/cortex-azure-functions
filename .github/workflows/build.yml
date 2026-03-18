@@ -150,13 +150,6 @@ jobs:
         name: nsg-flow-logs-package
         path: ./artifacts
     
-    - name: Rename artifacts with version
-      run: |
-        NEW_VERSION="${{ steps.bump_version.outputs.new_version }}"
-        mv ./artifacts/vnet.zip ./artifacts/vnet-${NEW_VERSION}.zip
-        mv ./artifacts/nsg.zip ./artifacts/nsg-${NEW_VERSION}.zip
-        ls -la ./artifacts/
-    
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
@@ -166,7 +159,7 @@ jobs:
         draft: false
         prerelease: false
         files: |
-          ./artifacts/vnet-${{ steps.bump_version.outputs.new_version }}.zip
-          ./artifacts/nsg-${{ steps.bump_version.outputs.new_version }}.zip
+          ./artifacts/vnet.zip
+          ./artifacts/nsg.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

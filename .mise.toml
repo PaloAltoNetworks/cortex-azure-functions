@@ -156,7 +156,7 @@ cd vnet-flow-logs && \
 docker run --rm \
   -v "$(pwd):/workspace" \
   -w /workspace \
-  python:3.11-slim \
+  python:3.13-slim \
   bash -c "pip install --target .python_packages/lib/site-packages -r requirements.txt && chown -R $(id -u):$(id -g) .python_packages" && \
 zip -r vnet.zip .funcignore .python_packages cortex_function host.json requirements.txt
 echo "✓ Build complete: vnet-flow-logs/vnet.zip"
@@ -171,7 +171,7 @@ cd nsg-flow-logs && \
 docker run --rm \
   -v "$(pwd):/workspace" \
   -w /workspace \
-  python:3.11-slim \
+  python:3.13-slim \
   bash -c "pip install --target .python_packages/lib/site-packages -r requirements.txt && chown -R $(id -u):$(id -g) .python_packages" && \
 zip -r nsg.zip .funcignore .python_packages cortex_function host.json requirements.txt
 echo "✓ Build complete: nsg-flow-logs/nsg.zip"
