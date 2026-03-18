@@ -55,7 +55,7 @@ docker run --rm \
   bash -c "pip install --target .python_packages/lib/site-packages -r requirements.txt"
 
 # Create deployment package
-zip -r vnet.zip .funcignore .python_packages CortexFunction host.json requirements.txt
+zip -r vnet.zip .funcignore .python_packages cortex_function host.json requirements.txt
 
 # The package is now ready: vnet.zip
 ```
@@ -73,7 +73,7 @@ docker run --rm \
   bash -c "pip install --target .python_packages/lib/site-packages -r requirements.txt"
 
 # Create deployment package
-zip -r nsg.zip .funcignore .python_packages CortexFunction host.json requirements.txt
+zip -r nsg.zip .funcignore .python_packages cortex_function host.json requirements.txt
 
 # The package is now ready: nsg.zip
 ```
@@ -116,7 +116,7 @@ Each deployment package includes:
 
 - `.funcignore` - Files to exclude from deployment
 - `.python_packages/` - Python dependencies installed for Linux
-- `CortexFunction/` - Function code and configuration
+- `cortex_function/` - Function code and configuration
 - `host.json` - Azure Functions host configuration
 - `requirements.txt` - Python dependencies list
 

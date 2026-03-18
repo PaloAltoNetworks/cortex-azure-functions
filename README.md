@@ -49,7 +49,7 @@ GitHub Actions automatically builds deployment packages on push to main branches
 ## Development
 
 Each function directory contains:
-- `CortexFunction/` - Function code
+- `cortex_function/` - Function code
 - `requirements.txt` - Python dependencies
 - `host.json` - Azure Functions configuration
 - `tests/` - Unit tests (vnet-flow-logs)
