@@ -521,6 +521,7 @@ class TestLargeFileProcessing:
         4. HTTP requests are made appropriately
         """
         import time
+        import tracemalloc
 
         print("\n" + "=" * 80)
         print("LARGE FILE PROCESSING TEST")
@@ -564,6 +565,9 @@ class TestLargeFileProcessing:
             # Create mock blob
             mock_blob = MockInputStream(json_content, 'large_PT1H.json')
 
+            # Start memory tracking (after test file generation)
+            tracemalloc.start()
+            
             # Process the file
             print("\n🔄 Processing file...")
             start_process = time.time()
@@ -571,9 +575,18 @@ class TestLargeFileProcessing:
             cortex_function.main(mock_blob)
 
             process_time = time.time() - start_process
+            
+            # Get peak memory usage
+            current_mem, peak_mem = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+            
+            peak_mem_mb = peak_mem / (1024 * 1024)
+            memory_overhead_ratio = peak_mem / file_size_bytes
 
             print(f"   Processing time: {process_time:.2f}s")
             print(f"   Throughput: {expected_total_tuples / process_time:,.0f} records/sec")
+            print(f"   Peak memory: {peak_mem_mb:.2f} MB")
+            print(f"   Memory overhead: {memory_overhead_ratio:.2f}x file size")
 
         # Verify results
         print("\n✅ Verifying results...")
