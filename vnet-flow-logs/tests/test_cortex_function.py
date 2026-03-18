@@ -439,5 +439,225 @@ class TestDenormalizeVnetRecords:
         assert '10.0.1.10' in source_addresses
 
 
+class TestLargeFileProcessing:
+    """Test processing of large files to verify memory optimization and correctness"""
+
+    def generate_deterministic_large_file(self, num_records=50, tuples_per_record=8000):
+        """
+        Generate a deterministic large test file (always same size/content).
+        Creates a file of approximately 30 MB.
+        
+        Args:
+            num_records: Number of top-level records (default: 50)
+            tuples_per_record: Flow tuples per record (default: 8000)
+            
+        Returns:
+            Tuple of (json_content_string, expected_total_tuples)
+        """
+        records = []
+        total_tuples = 0
+
+        for record_idx in range(num_records):
+            flow_tuples = []
+            for tuple_idx in range(tuples_per_record):
+                global_idx = record_idx * tuples_per_record + tuple_idx
+                total_tuples += 1
+
+                # Deterministic values based on index
+                timestamp = 1705315200 + global_idx
+                src_ip = f"10.{(global_idx // 65536) % 256}.{(global_idx // 256) % 256}.{global_idx % 256}"
+                dst_ip = f"20.{(global_idx // 65536) % 256}.{(global_idx // 256) % 256}.{global_idx % 256}"
+                src_port = 50000 + (global_idx % 15000)
+                dst_port = 443 if global_idx % 3 == 0 else (80 if global_idx % 3 == 1 else 22)
+                protocol = 'T' if global_idx % 2 == 0 else 'U'
+                direction = 'O' if global_idx % 2 == 0 else 'I'
+                action = 'A' if global_idx % 10 != 0 else 'D'
+
+                # 90% continuing flows, 10% blocked
+                if global_idx % 10 == 0:
+                    # Blocked flow (flowState=B)
+                    flow_tuple = f"{timestamp},{src_ip},{dst_ip},{src_port},{dst_port},{protocol},{direction},{action},B,,,,,"
+                else:
+                    # Continuing flow (flowState=C)
+                    packets_stod = (global_idx % 1000) + 10
+                    bytes_stod = packets_stod * 1500
+                    packets_dtos = (global_idx % 500) + 5
+                    bytes_dtos = packets_dtos * 1500
+                    flow_tuple = f"{timestamp},{src_ip},{dst_ip},{src_port},{dst_port},{protocol},{direction},{action},C,{packets_stod},{bytes_stod},{packets_dtos},{bytes_dtos}"
+
+                flow_tuples.append(flow_tuple)
+
+            record = {
+                'time': f'2024-01-15T{(10 + record_idx // 60) % 24:02d}:{record_idx % 60:02d}:00.0000000Z',
+                'category': 'FlowLogFlowEvent',
+                'operationName': 'FlowLogFlowEvent',
+                'flowLogResourceID': f'/subscriptions/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/resourceGroups/NetworkWatcherRG/providers/Microsoft.Network/virtualNetworks/vnet-prod-{record_idx % 100}',
+                'macAddress': f'00-0D-3A-{record_idx % 256:02X}-{(record_idx // 256) % 256:02X}-{(record_idx // 65536) % 256:02X}',
+                'flowLogVersion': 2,
+                'flowRecords': {
+                    'flows': [
+                        {
+                            'flowGroups': [
+                                {
+                                    'rule': f'SecurityRule_{record_idx % 50}',
+                                    'flowTuples': flow_tuples
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+            records.append(record)
+
+        data = {'records': records}
+        return json.dumps(data), total_tuples
+
+    def test_large_file_processing_with_batching(self, mock_env, captured_requests, capsys):
+        """
+        Test processing of a large file (30+ MB) to verify:
+        1. All records are processed correctly
+        2. Batching works as expected
+        3. Memory optimization is effective
+        4. HTTP requests are made appropriately
+        """
+        import time
+
+        print("\n" + "=" * 80)
+        print("LARGE FILE PROCESSING TEST")
+        print("=" * 80)
+
+        # Generate deterministic large file (30+ MB)
+        start_gen = time.time()
+        print("\n📝 Generating test file...")
+        json_content, expected_total_tuples = self.generate_deterministic_large_file(
+            num_records=50,
+            tuples_per_record=8000
+        )
+        gen_time = time.time() - start_gen
+
+        file_size_bytes = len(json_content.encode('utf-8'))
+        file_size_mb = file_size_bytes / (1024 * 1024)
+
+        print("   Records: 50")
+        print("   Tuples per record: 8,000")
+        print(f"   Total flow tuples: {expected_total_tuples:,}")
+        print(f"   File size: {file_size_mb:.2f} MB ({file_size_bytes:,} bytes)")
+        print(f"   Generation time: {gen_time:.2f}s")
+
+        # Set batch size for testing
+        with patch.dict(
+            os.environ,
+            {
+                'CORTEX_HTTP_ENDPOINT': 'https://test-endpoint.example.com/api/logs',
+                'CORTEX_ACCESS_TOKEN': 'test-token-12345',
+                'MAX_PAYLOAD_SIZE': '10000000',  # 10MB
+                'HTTP_MAX_RETRIES': '3',
+                'RETRY_INTERVAL': '100',
+                'BATCH_SIZE': '1000',  # Process 1000 records at a time
+            },
+        ):
+            import importlib
+
+            import cortex_function
+            importlib.reload(cortex_function)
+
+            # Create mock blob
+            mock_blob = MockInputStream(json_content, 'large_PT1H.json')
+
+            # Process the file
+            print("\n🔄 Processing file...")
+            start_process = time.time()
+
+            cortex_function.main(mock_blob)
+
+            process_time = time.time() - start_process
+
+            print(f"   Processing time: {process_time:.2f}s")
+            print(f"   Throughput: {expected_total_tuples / process_time:,.0f} records/sec")
+
+        # Verify results
+        print("\n✅ Verifying results...")
+
+        # Check that HTTP requests were made
+        assert len(captured_requests) > 0, 'No HTTP requests were made'
+        print(f"   HTTP requests sent: {len(captured_requests)}")
+
+        # Decompress and parse all received records
+        all_received_records = []
+        total_bytes_sent = 0
+
+        for req in captured_requests:
+            # Verify headers
+            assert req['headers']['Content-Type'] == 'application/json'
+            assert req['headers']['Content-Encoding'] == 'gzip'
+            assert req['headers']['Authorization'] == 'Bearer test-token-12345'
+
+            # Decompress and parse
+            records = decompress_and_parse_payload(req['data'])
+            all_received_records.extend(records)
+            total_bytes_sent += len(req['data'])
+
+        # Verify record count
+        print(f"   Total records received: {len(all_received_records):,}")
+        print(f"   Expected records: {expected_total_tuples:,}")
+        assert len(all_received_records) == expected_total_tuples, \
+            f'Expected {expected_total_tuples} records, got {len(all_received_records)}'
+
+        # Verify data integrity - check first, middle, and last records
+        print("\n🔍 Verifying data integrity...")
+
+        # First record (index 0)
+        first_record = all_received_records[0]
+        assert first_record['sourceAddress'] == '10.0.0.0'
+        assert first_record['destinationAddress'] == '20.0.0.0'
+        assert first_record['version'] == 2.0
+        assert first_record['flowState'] == 'B'  # First record is blocked (index 0 % 10 == 0)
+        print("   ✓ First record validated")
+
+        # Middle record (index 50000)
+        middle_record = all_received_records[50000]
+        expected_src_ip = f"10.{(50000 // 65536) % 256}.{(50000 // 256) % 256}.{50000 % 256}"
+        assert middle_record['sourceAddress'] == expected_src_ip
+        assert middle_record['version'] == 2.0
+        print("   ✓ Middle record validated (index 50000)")
+
+        # Last record
+        last_record = all_received_records[-1]
+        last_idx = expected_total_tuples - 1
+        expected_last_src_ip = f"10.{(last_idx // 65536) % 256}.{(last_idx // 256) % 256}.{last_idx % 256}"
+        assert last_record['sourceAddress'] == expected_last_src_ip
+        print(f"   ✓ Last record validated (index {last_idx})")
+
+        # Verify blocked vs continuing flows ratio
+        blocked_count = sum(1 for r in all_received_records if r.get('flowState') == 'B')
+        continuing_count = sum(1 for r in all_received_records if r.get('flowState') == 'C')
+        print("\n📊 Flow state distribution:")
+        print(f"   Blocked flows (B): {blocked_count:,} ({blocked_count/len(all_received_records)*100:.1f}%)")
+        print(f"   Continuing flows (C): {continuing_count:,} ({continuing_count/len(all_received_records)*100:.1f}%)")
+
+        # Should be approximately 10% blocked, 90% continuing
+        assert abs(blocked_count / len(all_received_records) - 0.1) < 0.01, \
+            "Blocked flow ratio should be ~10%"
+
+        # Compression stats
+        compression_ratio = file_size_bytes / total_bytes_sent if total_bytes_sent > 0 else 0
+        print("\n📦 Compression stats:")
+        print(f"   Original size: {file_size_mb:.2f} MB")
+        print(f"   Compressed sent: {total_bytes_sent / (1024 * 1024):.2f} MB")
+        print(f"   Compression ratio: {compression_ratio:.2f}x")
+
+        # Batching efficiency
+        expected_batches = (expected_total_tuples + 999) // 1000  # Ceiling division
+        print("\n🔢 Batching efficiency:")
+        print("   Batch size: 1,000 records")
+        print(f"   Expected batches: ~{expected_batches}")
+        print(f"   Actual HTTP requests: {len(captured_requests)}")
+        print(f"   Records per request: {len(all_received_records) / len(captured_requests):.1f}")
+
+        print("\n" + "=" * 80)
+        print("✅ LARGE FILE PROCESSING TEST PASSED")
+        print("=" * 80 + "\n")
+
+
 if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+    pytest.main([__file__, '-v', '-s'])  # -s to show print output

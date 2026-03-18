@@ -51,3 +51,7 @@ __azurite_db*__.json
 
 # Build artifacts
 vnet.zip
+
+# Test artifacts
+tests/large_PT1H.json
+tests/benchmark_results.json
