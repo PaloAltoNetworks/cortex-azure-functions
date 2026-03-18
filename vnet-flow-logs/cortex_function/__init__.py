@@ -23,7 +23,7 @@ BATCH_SIZE = int(os.environ.get('BATCH_SIZE', 1000))  # Process records in batch
 # Checkpoint configuration
 CHECKPOINT_CONNECTION = os.environ.get('CHECKPOINT_CONNECTION')
 CHECKPOINT_TABLE_NAME = os.environ.get('CHECKPOINT_TABLE_NAME', 'vnetflowcheckpoints')
-CHECKPOINT_RETENTION_DAYS = int(os.environ.get('CHECKPOINT_RETENTION_DAYS', 2))
+CHECKPOINT_RETENTION_DAYS = int(os.environ.get('CHECKPOINT_RETENTION_DAYS', 30))
 CHECKPOINT_CLEANUP_INTERVAL_HOURS = int(os.environ.get('CHECKPOINT_CLEANUP_INTERVAL_HOURS', 6))
 
 
