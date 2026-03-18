@@ -8,6 +8,8 @@ from io import BytesIO
 import azure.functions as func
 import requests
 
+from .checkpoint import CheckpointManager, get_checkpoint_manager
+
 app = func.FunctionApp()
 
 # Configuration
@@ -17,6 +19,12 @@ CORTEX_MAX_PAYLOAD_SIZE_BYTES = int(os.environ.get('MAX_PAYLOAD_SIZE', 10 * 1000
 HTTP_MAX_RETRIES = int(os.environ.get('HTTP_MAX_RETRIES', 3))
 RETRY_INTERVAL = int(os.environ.get('RETRY_INTERVAL', 2000))  # default: 2 seconds
 BATCH_SIZE = int(os.environ.get('BATCH_SIZE', 1000))  # Process records in batches of 1000
+
+# Checkpoint configuration
+CHECKPOINT_CONNECTION = os.environ.get('CHECKPOINT_CONNECTION')
+CHECKPOINT_TABLE_NAME = os.environ.get('CHECKPOINT_TABLE_NAME', 'vnetflowcheckpoints')
+CHECKPOINT_RETENTION_DAYS = int(os.environ.get('CHECKPOINT_RETENTION_DAYS', 2))
+CHECKPOINT_CLEANUP_INTERVAL_HOURS = int(os.environ.get('CHECKPOINT_CLEANUP_INTERVAL_HOURS', 6))
 
 
 def main(blob: func.InputStream):
@@ -34,7 +42,7 @@ def main(blob: func.InputStream):
         content = blob.read().decode('utf-8')
 
         if isinstance(content, str) and not content.strip():
-            logging.info(f'received an empty blob: {blob.name}')
+            logging.info(f'Blob {blob.name}: received empty content, skipping')
             return
 
         try:
@@ -46,14 +54,116 @@ def main(blob: func.InputStream):
             return
 
         if not log_lines:
-            logging.warning('empty blob, no logs')
+            logging.warning(f'Blob {blob.name}: parsed JSON is empty, skipping')
             return
 
-        # Process records in batches to reduce memory footprint
-        process_records_in_batches(log_lines)
+        all_records = log_lines.get('records', [])
+        if not all_records:
+            logging.warning(f'Blob {blob.name}: records array is empty, skipping')
+            return
+
+        logging.info(f'Blob {blob.name}: contains {len(all_records)} total top-level record(s)')
+
+        # --- Checkpoint: determine how many records were already processed ---
+        already_processed = 0
+        try:
+            checkpoint_mgr = _build_checkpoint_manager()
+        except Exception as e:
+            logging.error(
+                f'Blob {blob.name}: CheckpointManager initialization failed, '
+                f'processing all records without checkpoint. Error: {e}'
+            )
+            checkpoint_mgr = None
+
+        if checkpoint_mgr is not None:
+            try:
+                already_processed = checkpoint_mgr.get(blob.name)
+            except Exception as e:
+                logging.error(
+                    f'Blob {blob.name}: failed to read checkpoint, falling back to processing all records. Error: {e}'
+                )
+                already_processed = 0
+
+            # Guard against blob shrink / re-creation (e.g. blob was replaced)
+            if already_processed > len(all_records):
+                logging.warning(
+                    f'Blob {blob.name}: checkpoint ({already_processed}) exceeds total records '
+                    f'({len(all_records)}) — blob may have been re-created. Resetting checkpoint to 0.'
+                )
+                already_processed = 0
+
+        new_records = all_records[already_processed:]
+
+        if not new_records:
+            logging.info(
+                f'Blob {blob.name}: no new records since last checkpoint '
+                f'({already_processed}/{len(all_records)} already processed). Skipping.'
+            )
+            return
+
+        logging.info(
+            f'Blob {blob.name}: processing {len(new_records)} new record(s) '
+            f'(checkpoint={already_processed}, total={len(all_records)})'
+        )
+
+        # Process only the new records — process_records_in_batches accepts a dict with 'records'
+        # Allow exceptions to propagate so the checkpoint is NOT updated on failure
+        send_succeeded = False
+        try:
+            process_records_in_batches({'records': new_records})
+            send_succeeded = True
+        except Exception as e:
+            logging.error(f'Blob {blob.name}: failed to process/send records. Checkpoint will NOT be updated. Error: {e}')
+
+        # Update checkpoint only after all batches have been sent successfully
+        if send_succeeded and checkpoint_mgr is not None:
+            try:
+                checkpoint_mgr.update(
+                    blob.name,
+                    already_processed + len(new_records),
+                    blob.length,
+                )
+            except Exception as e:
+                logging.error(
+                    f'Blob {blob.name}: failed to update checkpoint after successful send. '
+                    f'Next invocation may re-process {len(new_records)} record(s). Error: {e}'
+                )
 
     except Exception as e:
-        logging.error(f'Error processing blob: {e}')
+        logging.error(f'Blob {blob.name}: unexpected error during processing. Error: {e}')
+
+
+def _build_checkpoint_manager() -> CheckpointManager | None:
+    """
+    Return the module-level CheckpointManager singleton (#3).
+    The singleton is created on the first invocation and reused on all
+    subsequent warm invocations, avoiding repeated Table Storage connections.
+
+    Returns None (with a warning) if CHECKPOINT_CONNECTION is not set,
+    allowing the function to operate in a backward-compatible degraded mode.
+
+    If initialization fails (e.g. transient Table Storage error), logs the
+    error and returns None so main() falls back to processing all records (#5).
+    """
+    if not CHECKPOINT_CONNECTION:
+        logging.warning(
+            'CHECKPOINT_CONNECTION is not set; processing all records without checkpoint. '
+            'Set CHECKPOINT_CONNECTION to enable deduplication.'
+        )
+        return None
+    try:
+        return get_checkpoint_manager(
+            connection_string=CHECKPOINT_CONNECTION,
+            table_name=CHECKPOINT_TABLE_NAME,
+            retention_days=CHECKPOINT_RETENTION_DAYS,
+            cleanup_interval_hours=CHECKPOINT_CLEANUP_INTERVAL_HOURS,
+        )
+    except Exception as e:
+        logging.error(
+            f'Failed to initialize CheckpointManager, processing all records without checkpoint. '
+            f'Error: {e}'
+        )
+        return None
 
 
 def process_records_in_batches(data):
@@ -118,6 +228,7 @@ def compress_and_send(data):
             retry_max(http_send, HTTP_MAX_RETRIES, RETRY_INTERVAL, compressed)
     except Exception as e:
         logging.error(f'Error during payload compression: {e}')
+        raise
 
 
 def http_send(data):
@@ -142,10 +253,13 @@ def retry_max(func, max_retries, interval, *args, **kwargs):
         except Exception as e:
             num_retries += 1
             if num_retries == max_retries:
-                logging.error(f'Failed to send logs after {max_retries} attempts')
+                logging.error(f'Failed to send logs after {max_retries} attempt(s). Last error: {e}')
                 raise e
             else:
-                logging.info(f'Attempt #{num_retries} failed. Retrying in {interval} ms.')
+                logging.warning(
+                    f'Attempt #{num_retries}/{max_retries} failed: {e}. '
+                    f'Retrying in {interval} ms.'
+                )
                 time.sleep(interval / 1000)
 
 
