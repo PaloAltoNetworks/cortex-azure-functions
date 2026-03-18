@@ -1,0 +1,55 @@
+name: Build Azure Functions
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  build-vnet:
+    name: Build vnet-flow-logs
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install mise
+      uses: jdx/mise-action@v2
+      with:
+        version: latest
+    
+    - name: Build vnet-flow-logs package
+      run: mise run build-vnet
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: vnet-flow-logs-package
+        path: vnet-flow-logs/vnet.zip
+        retention-days: 30
+
+  build-nsg:
+    name: Build nsg-flow-logs
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install mise
+      uses: jdx/mise-action@v2
+      with:
+        version: latest
+    
+    - name: Build nsg-flow-logs package
+      run: mise run build-nsg
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nsg-flow-logs-package
+        path: nsg-flow-logs/nsg.zip
+        retention-days: 30

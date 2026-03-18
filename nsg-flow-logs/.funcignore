@@ -1,1 +1,12 @@
 .venv
+.git*
+.vscode
+__pycache__
+*.py[cod]
+*$py.class
+.pytest_cache
+tests/
+*.zip
+.DS_Store
+README.md
+arm_template/

@@ -1,0 +1,154 @@
+[tools]
+python = "3.13"
+
+[tasks.help]
+description = "Show available tasks"
+run = """
+echo "Available tasks:"
+echo ""
+echo "Build tasks:"
+echo "  mise run build-vnet       - Build vnet-flow-logs deployment package"
+echo "  mise run build-nsg        - Build nsg-flow-logs deployment package"
+echo "  mise run clean-build      - Remove build artifacts"
+echo ""
+echo "Test tasks:"
+echo "  mise run test             - Run all Python tests"
+echo "  mise run test-vnet        - Run vnet-flow-logs tests"
+echo "  mise run test-nsg         - Run nsg-flow-logs tests (when available)"
+echo ""
+echo "Install tasks:"
+echo "  mise run install          - Install all dependencies"
+echo "  mise run install-vnet     - Install vnet-flow-logs dependencies"
+echo "  mise run install-nsg      - Install nsg-flow-logs dependencies"
+echo "  mise run install-dev      - Install development dependencies (pytest)"
+echo ""
+echo "Cleanup tasks:"
+echo "  mise run clean            - Remove test artifacts and cache"
+echo "  mise run clean-all        - Remove all artifacts (test + build)"
+"""
+
+[tasks.install-dev]
+description = "Install development dependencies"
+run = """
+echo "Installing development dependencies..."
+pip install pytest pytest-cov
+"""
+
+[tasks.install-vnet]
+description = "Install vnet-flow-logs dependencies"
+run = """
+echo "Installing vnet-flow-logs dependencies..."
+pip install -r vnet-flow-logs/requirements.txt
+"""
+
+[tasks.install-nsg]
+description = "Install nsg-flow-logs dependencies"
+run = """
+echo "Installing nsg-flow-logs dependencies..."
+pip install -r nsg-flow-logs/requirements.txt
+"""
+
+[tasks.install]
+description = "Install all dependencies"
+depends = ["install-vnet", "install-nsg", "install-dev"]
+
+[tasks.test-vnet]
+description = "Run vnet-flow-logs tests"
+depends = ["install-dev"]
+run = """
+echo "Running vnet-flow-logs tests..."
+cd vnet-flow-logs && python -m pytest tests/ -v
+"""
+
+[tasks.test-nsg]
+description = "Run nsg-flow-logs tests (placeholder for when tests are added)"
+depends = ["install-dev"]
+run = """
+echo "Running nsg-flow-logs tests..."
+if [ -d "nsg-flow-logs/tests" ]; then
+  cd nsg-flow-logs && python -m pytest tests/ -v
+else
+  echo "No tests found in nsg-flow-logs/tests"
+fi
+"""
+
+[tasks.test]
+description = "Run all Python tests"
+depends = ["test-vnet", "test-nsg"]
+run = """
+echo "Running all Python tests..."
+"""
+
+[tasks.clean]
+description = "Remove test artifacts and cache"
+run = """
+echo "Cleaning test artifacts and cache..."
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
+find . -type f -name "*.pyc" -delete 2>/dev/null || true
+find . -type f -name ".coverage" -delete 2>/dev/null || true
+echo "Clean complete."
+"""
+
+[tasks.clean-build-vnet]
+description = "Clean vnet-flow-logs build artifacts"
+run = """
+echo "Cleaning vnet-flow-logs build artifacts..."
+rm -rf vnet-flow-logs/.python_packages
+rm -f vnet-flow-logs/vnet.zip
+echo "✓ vnet-flow-logs cleaned"
+"""
+
+[tasks.clean-build-nsg]
+description = "Clean nsg-flow-logs build artifacts"
+run = """
+echo "Cleaning nsg-flow-logs build artifacts..."
+rm -rf nsg-flow-logs/.python_packages
+rm -f nsg-flow-logs/nsg.zip
+echo "✓ nsg-flow-logs cleaned"
+"""
+
+[tasks.clean-build]
+description = "Remove all build artifacts"
+depends = ["clean-build-vnet", "clean-build-nsg"]
+run = """
+echo "✓ All build artifacts cleaned"
+"""
+
+[tasks.clean-all]
+description = "Remove all artifacts (test + build)"
+depends = ["clean", "clean-build"]
+run = """
+echo "✓ All artifacts cleaned"
+"""
+
+[tasks.build-vnet]
+description = "Build vnet-flow-logs deployment package"
+depends = ["clean-build-vnet"]
+run = """
+echo "Building vnet-flow-logs deployment package..."
+cd vnet-flow-logs && \
+docker run --rm \
+  -v "$(pwd):/workspace" \
+  -w /workspace \
+  python:3.11-slim \
+  bash -c "pip install --target .python_packages/lib/site-packages -r requirements.txt && chown -R $(id -u):$(id -g) .python_packages" && \
+zip -r vnet.zip .funcignore .python_packages CortexFunction host.json requirements.txt
+echo "✓ Build complete: vnet-flow-logs/vnet.zip"
+"""
+
+[tasks.build-nsg]
+description = "Build nsg-flow-logs deployment package"
+depends = ["clean-build-nsg"]
+run = """
+echo "Building nsg-flow-logs deployment package..."
+cd nsg-flow-logs && \
+docker run --rm \
+  -v "$(pwd):/workspace" \
+  -w /workspace \
+  python:3.11-slim \
+  bash -c "pip install --target .python_packages/lib/site-packages -r requirements.txt && chown -R $(id -u):$(id -g) .python_packages" && \
+zip -r nsg.zip .funcignore .python_packages CortexFunction host.json requirements.txt
+echo "✓ Build complete: nsg-flow-logs/nsg.zip"
+"""
