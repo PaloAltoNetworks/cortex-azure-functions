@@ -24,8 +24,6 @@ jobs:
     
     - name: Install mise
       uses: jdx/mise-action@v2
-      with:
-        version: latest
     
     - name: Run linting
       run: mise run lint-check
@@ -41,8 +39,6 @@ jobs:
     
     - name: Install mise
       uses: jdx/mise-action@v2
-      with:
-        version: latest
     
     - name: Install dependencies
       run: mise run install
@@ -61,8 +57,6 @@ jobs:
     
     - name: Install mise
       uses: jdx/mise-action@v2
-      with:
-        version: latest
     
     - name: Build vnet-flow-logs package
       run: mise run build-vnet
