@@ -1,0 +1,187 @@
+name: Create Draft Release (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to create release from'
+        required: true
+        default: 'master'
+        type: string
+      version_tag:
+        description: 'Version tag (e.g., v1.2.3-test)'
+        required: true
+        type: string
+      release_name:
+        description: 'Release name (optional)'
+        required: false
+        type: string
+      release_notes:
+        description: 'Release notes (optional)'
+        required: false
+        type: string
+        default: 'Draft release for testing purposes'
+
+jobs:
+  lint:
+    name: Lint Python Code
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6.0.2
+      with:
+        ref: ${{ inputs.branch }}
+    
+    - name: Install mise
+      uses: jdx/mise-action@v4.0.0
+    
+    - name: Run linting
+      run: mise run lint-check
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6.0.2
+      with:
+        ref: ${{ inputs.branch }}
+    
+    - name: Install mise
+      uses: jdx/mise-action@v4.0.0
+    
+    - name: Install pip-audit
+      run: pip install pip-audit
+    
+    - name: Scan vnet-flow-logs dependencies
+      run: |
+        echo "Scanning vnet-flow-logs for vulnerabilities..."
+        pip-audit -r vnet-flow-logs/requirements.txt --desc || true
+    
+    - name: Scan nsg-flow-logs dependencies
+      run: |
+        echo "Scanning nsg-flow-logs for vulnerabilities..."
+        pip-audit -r nsg-flow-logs/requirements.txt --desc || true
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: [lint, security]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6.0.2
+      with:
+        ref: ${{ inputs.branch }}
+    
+    - name: Install mise
+      uses: jdx/mise-action@v4.0.0
+    
+    - name: Install dependencies
+      run: mise run install
+    
+    - name: Run tests
+      run: mise run test
+
+  build:
+    name: Build Packages
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6.0.2
+      with:
+        ref: ${{ inputs.branch }}
+    
+    - name: Install mise
+      uses: jdx/mise-action@v4.0.0
+    
+    - name: Build vnet-flow-logs package
+      run: mise run build-vnet
+    
+    - name: Build nsg-flow-logs package
+      run: mise run build-nsg
+    
+    - name: Upload vnet artifact
+      uses: actions/upload-artifact@v7.0.0
+      with:
+        name: vnet-flow-logs-package
+        path: vnet-flow-logs/vnet.zip
+        retention-days: 30
+    
+    - name: Upload nsg artifact
+      uses: actions/upload-artifact@v7.0.0
+      with:
+        name: nsg-flow-logs-package
+        path: nsg-flow-logs/nsg.zip
+        retention-days: 30
+
+  draft-release:
+    name: Create Draft Release
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6.0.2
+      with:
+        ref: ${{ inputs.branch }}
+        fetch-depth: 0
+    
+    - name: Download vnet artifact
+      uses: actions/download-artifact@v8.0.1
+      with:
+        name: vnet-flow-logs-package
+        path: ./artifacts
+    
+    - name: Download nsg artifact
+      uses: actions/download-artifact@v8.0.1
+      with:
+        name: nsg-flow-logs-package
+        path: ./artifacts
+    
+    - name: Prepare release notes
+      id: release_notes
+      run: |
+        # Create release notes file
+        cat > release_notes.md << 'EOF'
+        ${{ inputs.release_notes }}
+        
+        ---
+        **Branch:** ${{ inputs.branch }}
+        **Commit:** ${{ github.sha }}
+        **Triggered by:** @${{ github.actor }}
+        **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        EOF
+        
+        echo "Release notes prepared"
+    
+    - name: Create Draft Release
+      uses: softprops/action-gh-release@v2.6.1
+      with:
+        tag_name: ${{ inputs.version_tag }}
+        name: ${{ inputs.release_name || format('Draft Release {0}', inputs.version_tag) }}
+        body_path: release_notes.md
+        draft: true
+        prerelease: true
+        files: |
+          ./artifacts/vnet.zip
+          ./artifacts/nsg.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Summary
+      run: |
+        echo "## Draft Release Created Successfully! 🎉" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Tag:** ${{ inputs.version_tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch:** ${{ inputs.branch }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status:** Draft (not published)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Prerelease:** Yes" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "You can find the draft release in the [Releases](https://github.com/${{ github.repository }}/releases) page." >> $GITHUB_STEP_SUMMARY
