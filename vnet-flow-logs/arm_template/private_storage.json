@@ -53,7 +53,7 @@
         },
         "remotePackage": {
             "type": "string",
-            "defaultValue": "https://github.com/PaloAltoNetworks/cortex-azure-functions/releases/download/v1.0.2/vnet-1.0.2.zip",
+            "defaultValue": "https://github.com/PaloAltoNetworks/cortex-azure-functions/releases/latest/download/vnet.zip",
             "metadata": {
                 "description": "Remote package ZIP file URL"
             }
@@ -451,7 +451,7 @@
                 "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('servicePlanName'))]",
                 "siteConfig": {
                     "vnetRouteAllEnabled": true,
-                    "linuxFxVersion": "PYTHON|3.11",
+                    "linuxFxVersion": "PYTHON|3.13",
                     "appSettings": [
                         {
                             "name": "TargetAccountConnection",
