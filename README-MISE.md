@@ -43,14 +43,29 @@ This will automatically install Python 3.13 as specified in the configuration fi
 
 Run `mise run help` or `mise tasks` to see all available tasks:
 
+### Build Tasks
+- `mise run build-vnet` - Build vnet-flow-logs deployment package
+- `mise run build-nsg` - Build nsg-flow-logs deployment package
+- `mise run clean-build` - Remove build artifacts
+
+### Test Tasks
 - `mise run test` - Run all Python tests
 - `mise run test-vnet` - Run vnet-flow-logs tests
 - `mise run test-nsg` - Run nsg-flow-logs tests (when available)
+
+### Lint Tasks
+- `mise run lint` - Lint all Python code with auto-fix
+- `mise run lint-check` - Check linting without fixing
+
+### Install Tasks
 - `mise run install` - Install all dependencies
 - `mise run install-vnet` - Install vnet-flow-logs dependencies
 - `mise run install-nsg` - Install nsg-flow-logs dependencies
-- `mise run install-dev` - Install development dependencies (pytest)
+- `mise run install-dev` - Install development dependencies (pytest, ruff)
+
+### Cleanup Tasks
 - `mise run clean` - Remove test artifacts and cache
+- `mise run clean-all` - Remove all artifacts (test + build)
 
 ## Quick Start
 
@@ -69,6 +84,20 @@ mise run install
 mise run test
 ```
 
+## Linting
+
+This project uses [ruff](https://docs.astral.sh/ruff/) for fast Python linting and formatting:
+
+```bash
+# Check code without making changes
+mise run lint-check
+
+# Lint and auto-fix issues
+mise run lint
+```
+
+Configuration is in [`ruff.toml`](ruff.toml).
+
 ## Migration from Makefile
 
 The previous Makefile has been converted to mise tasks. All `make` commands now use `mise run`:
@@ -84,6 +113,10 @@ The previous Makefile has been converted to mise tasks. All `make` commands now 
 | `make install-nsg` | `mise run install-nsg` |
 | `make install-dev` | `mise run install-dev` |
 | `make clean` | `mise run clean` |
+| N/A | `mise run lint` |
+| N/A | `mise run lint-check` |
+| N/A | `mise run build-vnet` |
+| N/A | `mise run build-nsg` |
 
 ## Benefits of mise
 

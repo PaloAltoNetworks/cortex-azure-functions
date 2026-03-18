@@ -16,11 +16,15 @@ echo "  mise run test             - Run all Python tests"
 echo "  mise run test-vnet        - Run vnet-flow-logs tests"
 echo "  mise run test-nsg         - Run nsg-flow-logs tests (when available)"
 echo ""
+echo "Lint tasks:"
+echo "  mise run lint             - Lint all Python code"
+echo "  mise run lint-check       - Check linting without fixing"
+echo ""
 echo "Install tasks:"
 echo "  mise run install          - Install all dependencies"
 echo "  mise run install-vnet     - Install vnet-flow-logs dependencies"
 echo "  mise run install-nsg      - Install nsg-flow-logs dependencies"
-echo "  mise run install-dev      - Install development dependencies (pytest)"
+echo "  mise run install-dev      - Install development dependencies (pytest, ruff)"
 echo ""
 echo "Cleanup tasks:"
 echo "  mise run clean            - Remove test artifacts and cache"
@@ -31,7 +35,7 @@ echo "  mise run clean-all        - Remove all artifacts (test + build)"
 description = "Install development dependencies"
 run = """
 echo "Installing development dependencies..."
-pip install pytest pytest-cov
+pip install pytest pytest-cov ruff
 """
 
 [tasks.install-vnet]
@@ -77,6 +81,26 @@ description = "Run all Python tests"
 depends = ["test-vnet", "test-nsg"]
 run = """
 echo "Running all Python tests..."
+"""
+
+[tasks.lint]
+description = "Lint all Python code with auto-fix"
+depends = ["install-dev"]
+run = """
+echo "Linting Python code with ruff (auto-fix enabled)..."
+ruff check --fix nsg-flow-logs/ vnet-flow-logs/ --exclude "**/tests/__pycache__,**/.pytest_cache,**/.python_packages"
+ruff format nsg-flow-logs/ vnet-flow-logs/ --exclude "**/tests/__pycache__,**/.pytest_cache,**/.python_packages"
+echo "✓ Linting complete"
+"""
+
+[tasks.lint-check]
+description = "Check linting without fixing"
+depends = ["install-dev"]
+run = """
+echo "Checking Python code with ruff (no auto-fix)..."
+ruff check nsg-flow-logs/ vnet-flow-logs/ --exclude "**/tests/__pycache__,**/.pytest_cache,**/.python_packages"
+ruff format --check nsg-flow-logs/ vnet-flow-logs/ --exclude "**/tests/__pycache__,**/.pytest_cache,**/.python_packages"
+echo "✓ Lint check complete"
 """
 
 [tasks.clean]
