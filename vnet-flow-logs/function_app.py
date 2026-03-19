@@ -7,8 +7,7 @@ from io import BytesIO
 
 import azure.functions as func
 import requests
-
-from .checkpoint import CheckpointManager, get_checkpoint_manager
+from checkpoint import CheckpointManager, get_checkpoint_manager
 
 app = func.FunctionApp()
 
@@ -28,7 +27,7 @@ CHECKPOINT_CLEANUP_INTERVAL_HOURS = int(os.environ.get('CHECKPOINT_CLEANUP_INTER
 
 
 @app.blob_trigger(arg_name='blob', path='insights-logs-flowlogflowevent/{name}', connection='TargetAccountConnection')
-def main(blob: func.InputStream):
+def vnet_flow_log_trigger(blob: func.InputStream):
     logging.info(f'Python blob trigger function processing blob, Name: {blob.name}, Size: {blob.length} bytes')
 
     if not CORTEX_HTTP_ENDPOINT:
@@ -49,8 +48,6 @@ def main(blob: func.InputStream):
         try:
             log_lines = json.loads(content)
         except json.JSONDecodeError:
-            # This is expected for active Flow Logs.
-            # We log it as info and exit. The trigger will fire again on the next append.
             logging.info(f'Blob {blob.name} is currently incomplete (partial JSON). Skipping until next append.')
             return
 
@@ -65,7 +62,6 @@ def main(blob: func.InputStream):
 
         logging.info(f'Blob {blob.name}: contains {len(all_records)} total top-level record(s)')
 
-        # --- Checkpoint: determine how many records were already processed ---
         already_processed = 0
         try:
             checkpoint_mgr = _build_checkpoint_manager()
@@ -85,7 +81,6 @@ def main(blob: func.InputStream):
                 )
                 already_processed = 0
 
-            # Guard against blob shrink / re-creation (e.g. blob was replaced)
             if already_processed > len(all_records):
                 logging.warning(
                     f'Blob {blob.name}: checkpoint ({already_processed}) exceeds total records '
@@ -107,8 +102,6 @@ def main(blob: func.InputStream):
             f'(checkpoint={already_processed}, total={len(all_records)})'
         )
 
-        # Process only the new records — process_records_in_batches accepts a dict with 'records'
-        # Allow exceptions to propagate so the checkpoint is NOT updated on failure
         send_succeeded = False
         try:
             process_records_in_batches({'records': new_records})
@@ -118,7 +111,6 @@ def main(blob: func.InputStream):
                 f'Blob {blob.name}: failed to process/send records. Checkpoint will NOT be updated. Error: {e}'
             )
 
-        # Update checkpoint only after all batches have been sent successfully
         if send_succeeded and checkpoint_mgr is not None:
             try:
                 checkpoint_mgr.update(
@@ -137,17 +129,6 @@ def main(blob: func.InputStream):
 
 
 def _build_checkpoint_manager() -> CheckpointManager | None:
-    """
-    Return the module-level CheckpointManager singleton (#3).
-    The singleton is created on the first invocation and reused on all
-    subsequent warm invocations, avoiding repeated Table Storage connections.
-
-    Returns None (with a warning) if CHECKPOINT_CONNECTION is not set,
-    allowing the function to operate in a backward-compatible degraded mode.
-
-    If initialization fails (e.g. transient Table Storage error), logs the
-    error and returns None so main() falls back to processing all records (#5).
-    """
     if not CHECKPOINT_CONNECTION:
         logging.warning(
             'CHECKPOINT_CONNECTION is not set; processing all records without checkpoint. '
@@ -167,11 +148,6 @@ def _build_checkpoint_manager() -> CheckpointManager | None:
 
 
 def process_records_in_batches(data):
-    """
-    Process VNET flow log records in batches to minimize memory usage.
-    Instead of denormalizing all records at once, we process BATCH_SIZE records at a time,
-    send them, and clear them from memory before processing the next batch.
-    """
     batch = []
     total_processed = 0
 
@@ -179,18 +155,15 @@ def process_records_in_batches(data):
         for outer_flow in record['flowRecords']['flows']:
             for inner_flow in outer_flow['flowGroups']:
                 for flow_tuple in inner_flow['flowTuples']:
-                    # Create denormalized record
                     denormalized_record = create_vnet_record(record, inner_flow, flow_tuple)
                     batch.append(denormalized_record)
 
-                    # When batch reaches BATCH_SIZE, send it and clear
                     if len(batch) >= BATCH_SIZE:
                         compress_and_send(batch)
                         total_processed += len(batch)
                         logging.info(f'Processed and sent {total_processed} records so far')
-                        batch.clear()  # Clear batch to free memory
+                        batch.clear()
 
-    # Send any remaining records in the final batch
     if batch:
         compress_and_send(batch)
         total_processed += len(batch)
@@ -204,16 +177,13 @@ def serialize_in_batches(objects, max_batch_size=CORTEX_MAX_PAYLOAD_SIZE_BYTES):
         json_line = json.dumps(obj)
         json_line_bytes = json_line.encode('utf-8') + b'\n'
 
-        # Check if the compressed batch size exceeds the max batch size
         if b.tell() + len(json_line_bytes) > max_batch_size:
-            # If the batch size is exceeded, yield the compressed batch (excluding the current object)
             batch = b.getvalue()
             yield batch
             b = BytesIO()
 
         b.write(json_line_bytes)
 
-    # Yield the last batch if there are any remaining objects
     if b.tell() > 0:
         batch = b.getvalue()
         yield batch
@@ -264,7 +234,6 @@ def create_vnet_record(record, inner_flow, flow_tuple):
     tuple_parts = flow_tuple.split(',')
     version = record['flowLogVersion']
 
-    # Log format reference: https://learn.microsoft.com/en-us/azure/network-watcher/vnet-flow-logs-overview?tabs=Americas#log-format
     denormalized = {
         'time': record['time'],
         'category': record['category'],

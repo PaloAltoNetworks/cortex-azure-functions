@@ -15,7 +15,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from datetime import UTC
 
-from cortex_function import main
+from function_app import vnet_flow_log_trigger as main
 
 # Sample vnet flow log data (version 2 format)
 SAMPLE_VNET_FLOW_LOG_V2 = {
@@ -132,12 +132,12 @@ def mock_env():
         # Reload the module to pick up new env vars
         import importlib
 
-        import cortex_function
+        import function_app
 
-        importlib.reload(cortex_function)
+        importlib.reload(function_app)
         yield
         # Reload again to restore original state
-        importlib.reload(cortex_function)
+        importlib.reload(function_app)
 
 
 @pytest.fixture
@@ -151,7 +151,7 @@ def captured_requests():
         requests.append({'url': url, 'data': data, 'headers': headers})
         return response
 
-    with patch('cortex_function.requests.post', side_effect=mock_post):
+    with patch('function_app.requests.post', side_effect=mock_post):
         yield requests
 
 
@@ -288,15 +288,15 @@ class TestCortexFunctionE2E:
         with patch.dict(os.environ, {'CORTEX_ACCESS_TOKEN': 'test-token'}, clear=True):
             import importlib
 
-            import cortex_function
+            import function_app
 
-            importlib.reload(cortex_function)
+            importlib.reload(function_app)
 
             blob_content = json.dumps(SAMPLE_VNET_FLOW_LOG_V2)
             mock_blob = MockInputStream(blob_content, 'test.json')
 
             # Act
-            cortex_function.main(mock_blob)
+            function_app.vnet_flow_log_trigger(mock_blob)
 
             # Assert
             assert len(captured_requests) == 0, 'No requests should be sent without endpoint'
@@ -307,15 +307,15 @@ class TestCortexFunctionE2E:
         with patch.dict(os.environ, {'CORTEX_HTTP_ENDPOINT': 'https://test.example.com'}, clear=True):
             import importlib
 
-            import cortex_function
+            import function_app
 
-            importlib.reload(cortex_function)
+            importlib.reload(function_app)
 
             blob_content = json.dumps(SAMPLE_VNET_FLOW_LOG_V2)
             mock_blob = MockInputStream(blob_content, 'test.json')
 
             # Act
-            cortex_function.main(mock_blob)
+            function_app.vnet_flow_log_trigger(mock_blob)
 
             # Assert
             assert len(captured_requests) == 0, 'No requests should be sent without token'
@@ -365,15 +365,15 @@ class TestCortexFunctionE2E:
         ):
             import importlib
 
-            import cortex_function
+            import function_app
 
-            importlib.reload(cortex_function)
+            importlib.reload(function_app)
 
             blob_content = json.dumps(large_dataset)
             mock_blob = MockInputStream(blob_content, 'large.json')
 
             # Act
-            cortex_function.main(mock_blob)
+            function_app.vnet_flow_log_trigger(mock_blob)
 
         # Assert - should have multiple batches
         assert len(captured_requests) > 1, 'Large payload should be split into multiple batches'
@@ -499,9 +499,9 @@ class TestLargeFileProcessing:
         ):
             import importlib
 
-            import cortex_function
+            import function_app
 
-            importlib.reload(cortex_function)
+            importlib.reload(function_app)
 
             # Create mock blob
             mock_blob = MockInputStream(json_content, 'large_PT1H.json')
@@ -513,7 +513,7 @@ class TestLargeFileProcessing:
             print('\n🔄 Processing file...')
             start_process = time.time()
 
-            cortex_function.main(mock_blob)
+            function_app.vnet_flow_log_trigger(mock_blob)
 
             process_time = time.time() - start_process
 
@@ -657,10 +657,10 @@ class TestCheckpointManager:
         sys.modules['azure.core.exceptions'] = azure_core_exc_stub
 
         # Force reimport with stubs in place
-        if 'cortex_function.checkpoint' in sys.modules:
-            del sys.modules['cortex_function.checkpoint']
+        if 'checkpoint' in sys.modules:
+            del sys.modules['checkpoint']
 
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         mgr = CheckpointManager.__new__(CheckpointManager)
         mgr._table_name = 'vnetflowcheckpoints'
@@ -676,7 +676,7 @@ class TestCheckpointManager:
 
     def test_row_key_is_stable(self):
         """Same blob name always produces the same RowKey (sha256 of full path)."""
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         blob_name = 'insights-logs-flowlogflowevent/resourceId=sub/y=2024/m=01/d=15/h=10/m=00/PT1H.json'
         mgr = CheckpointManager.__new__(CheckpointManager)
@@ -689,7 +689,7 @@ class TestCheckpointManager:
 
     def test_row_key_different_blobs_produce_different_keys(self):
         """Different blob paths produce different RowKeys."""
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         mgr = CheckpointManager.__new__(CheckpointManager)
 
@@ -700,13 +700,13 @@ class TestCheckpointManager:
 
     def test_partition_key_is_constant(self):
         """All blobs share the same PartitionKey ('checkpoints') for a flat table."""
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         assert CheckpointManager.PARTITION_KEY == 'checkpoints'
 
     def test_update_stores_blob_name_field(self):
         """update() stores the original blob_name in the row for human readability."""
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         mock_tc = Mock()
         mock_tc.upsert_entity = Mock()
@@ -731,7 +731,7 @@ class TestCheckpointManager:
     def test_get_returns_zero_for_missing_key(self):
         """No row in table → get() returns 0."""
         from azure.core.exceptions import ResourceNotFoundError
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         mock_tc = Mock()
         mock_tc.get_entity = Mock(side_effect=ResourceNotFoundError())
@@ -744,7 +744,7 @@ class TestCheckpointManager:
 
     def test_get_returns_stored_count(self):
         """Row exists → get() returns processed_record_count."""
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         mock_tc = Mock()
         mock_tc.get_entity = Mock(return_value={'processed_record_count': 42})
@@ -761,7 +761,7 @@ class TestCheckpointManager:
 
     def test_update_creates_row_with_correct_fields(self):
         """update() upserts a row with processed_record_count, blob_size_at_last_run, last_updated."""
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         mock_tc = Mock()
         mock_tc.upsert_entity = Mock()
@@ -783,7 +783,7 @@ class TestCheckpointManager:
 
     def test_update_overwrites_existing_row(self):
         """Calling update() twice overwrites the previous value."""
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         upserted = []
         mock_tc = Mock()
@@ -809,7 +809,7 @@ class TestCheckpointManager:
         """update() calls maybe_cleanup_stale() when current_hour % interval == 0."""
         from unittest.mock import patch
 
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         mock_tc = Mock()
         mock_tc.upsert_entity = Mock()
@@ -824,7 +824,7 @@ class TestCheckpointManager:
             from datetime import datetime
 
             fixed_dt = datetime(2024, 1, 15, 0, 30, 0, tzinfo=UTC)  # hour=0
-            with patch('cortex_function.checkpoint.datetime') as mock_dt:
+            with patch('checkpoint.datetime') as mock_dt:
                 mock_dt.now.return_value = fixed_dt
                 mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
                 mgr.update('container/PT1H.json', 5, 1000)
@@ -835,7 +835,7 @@ class TestCheckpointManager:
         """update() does NOT call maybe_cleanup_stale() when current_hour % interval != 0."""
         from unittest.mock import patch
 
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         mock_tc = Mock()
         mock_tc.upsert_entity = Mock()
@@ -849,7 +849,7 @@ class TestCheckpointManager:
             from datetime import datetime
 
             fixed_dt = datetime(2024, 1, 15, 1, 30, 0, tzinfo=UTC)  # hour=1, 1%6 != 0
-            with patch('cortex_function.checkpoint.datetime') as mock_dt:
+            with patch('checkpoint.datetime') as mock_dt:
                 mock_dt.now.return_value = fixed_dt
                 mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
                 mgr.update('container/PT1H.json', 5, 1000)
@@ -861,7 +861,7 @@ class TestCheckpointManager:
         from datetime import datetime, timedelta
         from unittest.mock import patch
 
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         now = datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC)
         cutoff = now - timedelta(days=2)
@@ -874,7 +874,7 @@ class TestCheckpointManager:
         mgr = CheckpointManager.__new__(CheckpointManager)
         mgr._table_client = mock_tc
 
-        with patch('cortex_function.checkpoint.datetime') as mock_dt:
+        with patch('checkpoint.datetime') as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             mgr.maybe_cleanup_stale(retention_days=2)
@@ -887,7 +887,7 @@ class TestCheckpointManager:
         from datetime import datetime, timedelta
         from unittest.mock import patch
 
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         now = datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC)
         stale_ts = (now - timedelta(days=3)).isoformat()
@@ -902,7 +902,7 @@ class TestCheckpointManager:
         mgr = CheckpointManager.__new__(CheckpointManager)
         mgr._table_client = mock_tc
 
-        with patch('cortex_function.checkpoint.datetime') as mock_dt:
+        with patch('checkpoint.datetime') as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             mgr.maybe_cleanup_stale(retention_days=2)
@@ -921,7 +921,7 @@ class TestCheckpointManager:
         from datetime import datetime
         from unittest.mock import patch
 
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         now = datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC)
 
@@ -933,7 +933,7 @@ class TestCheckpointManager:
         mgr = CheckpointManager.__new__(CheckpointManager)
         mgr._table_client = mock_tc
 
-        with patch('cortex_function.checkpoint.datetime') as mock_dt:
+        with patch('checkpoint.datetime') as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             mgr.maybe_cleanup_stale(retention_days=2)
@@ -946,7 +946,7 @@ class TestCheckpointManager:
         from unittest.mock import patch
 
         from azure.core.exceptions import ResourceNotFoundError
-        from cortex_function.checkpoint import CheckpointManager
+        from checkpoint import CheckpointManager
 
         now = datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC)
         stale_ts = (now - timedelta(days=5)).isoformat()
@@ -959,7 +959,7 @@ class TestCheckpointManager:
         mgr = CheckpointManager.__new__(CheckpointManager)
         mgr._table_client = mock_tc
 
-        with patch('cortex_function.checkpoint.datetime') as mock_dt:
+        with patch('checkpoint.datetime') as mock_dt:
             mock_dt.now.return_value = now
             mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
             # Should not raise
@@ -985,7 +985,7 @@ class TestCheckpointBehavior:
         mgr = Mock()
         mgr.get = Mock(return_value=0)
         mgr.update = Mock()
-        with patch('cortex_function._build_checkpoint_manager', return_value=mgr):
+        with patch('function_app._build_checkpoint_manager', return_value=mgr):
             yield mgr
 
     # ------------------------------------------------------------------
@@ -1039,7 +1039,7 @@ class TestCheckpointBehavior:
 
         blob = self._make_blob(SAMPLE_VNET_FLOW_LOG_V2)
 
-        with patch('cortex_function.requests.post') as mock_post:
+        with patch('function_app.requests.post') as mock_post:
             mock_post.return_value = Mock(status_code=500)
             main(blob)
 
@@ -1113,12 +1113,12 @@ class TestCheckpointBehavior:
         ):
             import importlib
 
-            import cortex_function
+            import function_app
 
-            importlib.reload(cortex_function)
+            importlib.reload(function_app)
 
             blob = self._make_blob(SAMPLE_VNET_FLOW_LOG_V2)
-            cortex_function.main(blob)
+            function_app.vnet_flow_log_trigger(blob)
 
         all_records = []
         for req in captured_requests:
@@ -1190,12 +1190,12 @@ class TestCheckpointBehavior:
         with patch.dict(os.environ, {'BATCH_SIZE': '1'}):
             import importlib
 
-            import cortex_function
+            import function_app
 
-            importlib.reload(cortex_function)
+            importlib.reload(function_app)
 
-            with patch('cortex_function.requests.post', side_effect=fail_on_second_call):
-                cortex_function.main(blob)
+            with patch('function_app.requests.post', side_effect=fail_on_second_call):
+                function_app.vnet_flow_log_trigger(blob)
 
         # Checkpoint must NOT be updated because the overall send did not fully succeed
         mock_checkpoint_mgr.update.assert_not_called()
@@ -1206,7 +1206,7 @@ class TestCheckpointBehavior:
         (e.g. transient Table Storage error during _ensure_table), main() falls back
         to processing all records without a checkpoint rather than crashing.
         """
-        with patch('cortex_function._build_checkpoint_manager', side_effect=Exception('503 Service Unavailable')):
+        with patch('function_app._build_checkpoint_manager', side_effect=Exception('503 Service Unavailable')):
             blob = self._make_blob(SAMPLE_VNET_FLOW_LOG_V2)
             # Should not raise
             main(blob)
