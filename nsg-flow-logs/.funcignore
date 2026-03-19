@@ -9,4 +9,5 @@ tests/
 *.zip
 .DS_Store
 README.md
+CHANGES.md
 arm_template/

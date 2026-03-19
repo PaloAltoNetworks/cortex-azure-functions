@@ -474,6 +474,14 @@
                             "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('internalStorageAccountName'),';AccountKey=',listkeys(resourceId('Microsoft.Storage/storageAccounts', variables('internalStorageAccountName')), '2021-04-01').keys[0].value,';EndpointSuffix=',environment().suffixes.storage)]"
                         },
                         {
+                            "name": "CHECKPOINT_CONNECTION",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('internalStorageAccountName'),';AccountKey=',listkeys(resourceId('Microsoft.Storage/storageAccounts', variables('internalStorageAccountName')), '2021-04-01').keys[0].value,';EndpointSuffix=',environment().suffixes.storage)]"
+                        },
+                        {
+                            "name": "CHECKPOINT_TABLE_NAME",
+                            "value": "nsgflowcheckpoints"
+                        },
+                        {
                             "name": "FUNCTIONS_WORKER_RUNTIME",
                             "value": "python"
                         },
