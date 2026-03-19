@@ -1,6 +1,10 @@
-name: Create Draft Release (Manual)
+name: Create Draft Release
 
 on:
+  # Trigger automatically when the 'create-draft-release' label is added to a PR
+  pull_request:
+    types: [labeled]
+  # Keep manual trigger as fallback
   workflow_dispatch:
     inputs:
       branch:
@@ -26,12 +30,16 @@ jobs:
   lint:
     name: Lint Python Code
     runs-on: ubuntu-latest
-    
+    # For label trigger: only run when the 'create-draft-release' label was added
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.label.name == 'create-draft-release')
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v6.0.2
       with:
-        ref: ${{ inputs.branch }}
+        ref: ${{ github.event_name == 'pull_request' && github.head_ref || inputs.branch }}
     
     - name: Install mise
       uses: jdx/mise-action@v4.0.0
@@ -42,12 +50,15 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-    
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.label.name == 'create-draft-release')
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v6.0.2
       with:
-        ref: ${{ inputs.branch }}
+        ref: ${{ github.event_name == 'pull_request' && github.head_ref || inputs.branch }}
     
     - name: Install mise
       uses: jdx/mise-action@v4.0.0
@@ -69,12 +80,12 @@ jobs:
     name: Run Tests
     runs-on: ubuntu-latest
     needs: [lint, security]
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v6.0.2
       with:
-        ref: ${{ inputs.branch }}
+        ref: ${{ github.event_name == 'pull_request' && github.head_ref || inputs.branch }}
     
     - name: Install mise
       uses: jdx/mise-action@v4.0.0
@@ -89,12 +100,12 @@ jobs:
     name: Build Packages
     runs-on: ubuntu-latest
     needs: test
-    
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v6.0.2
       with:
-        ref: ${{ inputs.branch }}
+        ref: ${{ github.event_name == 'pull_request' && github.head_ref || inputs.branch }}
     
     - name: Install mise
       uses: jdx/mise-action@v4.0.0
@@ -125,12 +136,13 @@ jobs:
     needs: build
     permissions:
       contents: write
-    
+      pull-requests: write
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v6.0.2
       with:
-        ref: ${{ inputs.branch }}
+        ref: ${{ github.event_name == 'pull_request' && github.head_ref || inputs.branch }}
         fetch-depth: 0
     
     - name: Download vnet artifact
@@ -145,27 +157,45 @@ jobs:
         name: nsg-flow-logs-package
         path: ./artifacts
     
+    - name: Resolve inputs
+      id: resolve
+      run: |
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          BRANCH="${{ github.head_ref }}"
+          VERSION_TAG="draft-pr${PR_NUMBER}-$(date -u +%Y%m%d%H%M%S)"
+          RELEASE_NAME="Draft Release PR #${PR_NUMBER} (${BRANCH})"
+          RELEASE_NOTES="Draft release from PR #${PR_NUMBER} on branch \`${BRANCH}\`"
+        else
+          BRANCH="${{ inputs.branch }}"
+          VERSION_TAG="${{ inputs.version_tag }}"
+          RELEASE_NAME="${{ inputs.release_name }}"
+          RELEASE_NOTES="${{ inputs.release_notes }}"
+        fi
+        echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
+        echo "version_tag=${VERSION_TAG}" >> $GITHUB_OUTPUT
+        echo "release_name=${RELEASE_NAME}" >> $GITHUB_OUTPUT
+        echo "release_notes=${RELEASE_NOTES}" >> $GITHUB_OUTPUT
+
     - name: Prepare release notes
       id: release_notes
       run: |
-        # Create release notes file
         cat > release_notes.md << 'EOF'
-        ${{ inputs.release_notes }}
-        
+        ${{ steps.resolve.outputs.release_notes }}
+
         ---
-        **Branch:** ${{ inputs.branch }}
+        **Branch:** ${{ steps.resolve.outputs.branch }}
         **Commit:** ${{ github.sha }}
         **Triggered by:** @${{ github.actor }}
         **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
         EOF
-        
         echo "Release notes prepared"
-    
+
     - name: Create Draft Release
       uses: softprops/action-gh-release@v2.6.1
       with:
-        tag_name: ${{ inputs.version_tag }}
-        name: ${{ inputs.release_name || format('Draft Release {0}', inputs.version_tag) }}
+        tag_name: ${{ steps.resolve.outputs.version_tag }}
+        name: ${{ steps.resolve.outputs.release_name || format('Draft Release {0}', steps.resolve.outputs.version_tag) }}
         body_path: release_notes.md
         draft: true
         prerelease: true
@@ -174,13 +204,25 @@ jobs:
           ./artifacts/nsg.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
+
+    - name: Comment on PR with release link
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## ✅ Draft Release Created\n\n**Tag:** \`${{ steps.resolve.outputs.version_tag }}\`\n**Branch:** \`${{ steps.resolve.outputs.branch }}\`\n\nView it in the [Releases](https://github.com/${{ github.repository }}/releases) page.`
+          })
+
     - name: Summary
       run: |
         echo "## Draft Release Created Successfully! 🎉" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "- **Tag:** ${{ inputs.version_tag }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Branch:** ${{ inputs.branch }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Tag:** ${{ steps.resolve.outputs.version_tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch:** ${{ steps.resolve.outputs.branch }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Status:** Draft (not published)" >> $GITHUB_STEP_SUMMARY
         echo "- **Prerelease:** Yes" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
