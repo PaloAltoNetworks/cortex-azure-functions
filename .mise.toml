@@ -158,7 +158,7 @@ docker run --rm \
   -w /workspace \
   python:3.13-slim \
   bash -c "pip install --target .python_packages/lib/site-packages -r requirements.txt && chown -R $(id -u):$(id -g) .python_packages" && \
-zip -r vnet.zip .funcignore .python_packages cortex_function host.json requirements.txt
+zip -r vnet.zip .funcignore .python_packages function_app.py checkpoint.py host.json requirements.txt
 echo "✓ Build complete: vnet-flow-logs/vnet.zip"
 """
 

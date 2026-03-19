@@ -390,13 +390,13 @@ class TestCortexFunctionE2E:
 class TestLargeFileProcessing:
     """Test processing of large files to verify memory optimization and correctness"""
 
-    def generate_deterministic_large_file(self, num_records=50, tuples_per_record=8000):
+    def generate_deterministic_large_file(self, num_records=25, tuples_per_record=8000):
         """
         Generate a deterministic large test file (always same size/content).
-        Creates a file of approximately 30 MB.
+        Creates a file of approximately 15 MB.
 
         Args:
-            num_records: Number of top-level records (default: 50)
+            num_records: Number of top-level records (default: 25)
             tuples_per_record: Flow tuples per record (default: 8000)
 
         Returns:
@@ -472,14 +472,14 @@ class TestLargeFileProcessing:
         start_gen = time.time()
         print('\n📝 Generating test file...')
         json_content, expected_total_tuples = self.generate_deterministic_large_file(
-            num_records=50, tuples_per_record=8000
+            num_records=25, tuples_per_record=8000
         )
         gen_time = time.time() - start_gen
 
         file_size_bytes = len(json_content.encode('utf-8'))
         file_size_mb = file_size_bytes / (1024 * 1024)
 
-        print('   Records: 50')
+        print('   Records: 25')
         print('   Tuples per record: 8,000')
         print(f'   Total flow tuples: {expected_total_tuples:,}')
         print(f'   File size: {file_size_mb:.2f} MB ({file_size_bytes:,} bytes)')

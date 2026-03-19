@@ -10,6 +10,7 @@ import requests
 from checkpoint import CheckpointManager, get_checkpoint_manager
 
 app = func.FunctionApp()
+logging.info("FunctionApp instance created. Starting discovery...")
 
 # Configuration
 CORTEX_HTTP_ENDPOINT = os.environ.get('CORTEX_HTTP_ENDPOINT')
@@ -26,6 +27,7 @@ CHECKPOINT_RETENTION_DAYS = int(os.environ.get('CHECKPOINT_RETENTION_DAYS', 30))
 CHECKPOINT_CLEANUP_INTERVAL_HOURS = int(os.environ.get('CHECKPOINT_CLEANUP_INTERVAL_HOURS', 6))
 
 
+logging.info("Registering vnet_flow_log_trigger...")
 @app.blob_trigger(arg_name='blob', path='insights-logs-flowlogflowevent/{name}', connection='TargetAccountConnection')
 def vnet_flow_log_trigger(blob: func.InputStream):
     logging.info(f'Python blob trigger function processing blob, Name: {blob.name}, Size: {blob.length} bytes')
