@@ -115,18 +115,19 @@ class CheckpointManager:
         """
         row_key = self._make_row_key(blob_name)
         now_utc = datetime.now(UTC)
+        now_iso = now_utc.strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
         entity = {
             'PartitionKey': self.PARTITION_KEY,
             'RowKey': row_key,
             'blob_name': blob_name,
             'processed_record_count': processed_count,
             'blob_size_at_last_run': blob_size,
-            'last_updated': now_utc.isoformat(),
+            'last_updated': now_iso,
         }
         self._table_client.upsert_entity(entity=entity, mode=UpdateMode.REPLACE)
         logging.info(
             f'Checkpoint updated for {blob_name}: processed_record_count={processed_count}, '
-            f'blob_size={blob_size} bytes, last_updated={now_utc.isoformat()}'
+            f'blob_size={blob_size} bytes, last_updated={now_iso}'
         )
 
         # Passive cleanup — runs only on matching hours to keep overhead minimal
@@ -152,7 +153,7 @@ class CheckpointManager:
         produce a 404 which is swallowed safely.
         """
         cutoff = datetime.now(UTC) - timedelta(days=retention_days)
-        cutoff_iso = cutoff.isoformat()
+        cutoff_iso = cutoff.strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
 
         logging.info(f'Running stale checkpoint cleanup: deleting rows with last_updated < {cutoff_iso}')
 

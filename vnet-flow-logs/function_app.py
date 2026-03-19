@@ -26,6 +26,14 @@ CHECKPOINT_TABLE_NAME = os.environ.get('CHECKPOINT_TABLE_NAME', 'vnetflowcheckpo
 CHECKPOINT_RETENTION_DAYS = int(os.environ.get('CHECKPOINT_RETENTION_DAYS', 30))
 CHECKPOINT_CLEANUP_INTERVAL_HOURS = int(os.environ.get('CHECKPOINT_CLEANUP_INTERVAL_HOURS', 6))
 
+# HTTP status codes that should not be retried (auth errors will never succeed on retry)
+NON_RETRYABLE_STATUS_CODES = {401, 403}
+
+
+class NonRetryableError(Exception):
+    """Raised for errors that should not be retried (e.g. auth failures)."""
+    pass
+
 
 logging.info('Registering vnet_flow_log_trigger...')
 
@@ -130,6 +138,7 @@ def vnet_flow_log_trigger(blob: func.InputStream):
 
     except Exception as e:
         logging.error(f'Blob {blob.name}: unexpected error during processing. Error: {e}')
+        raise
 
 
 def _build_checkpoint_manager() -> CheckpointManager | None:
@@ -214,6 +223,11 @@ def http_send(data):
 
     response = requests.post(CORTEX_HTTP_ENDPOINT, data=data, headers=headers)
     logging.info(f'Got response: {response.status_code}')
+    if response.status_code in NON_RETRYABLE_STATUS_CODES:
+        raise NonRetryableError(
+            f'Non-retryable error from Cortex HTTP collector. '
+            f'Status code: {response.status_code}. Check CORTEX_ACCESS_TOKEN configuration.'
+        )
     if response.status_code != 200:
         raise Exception(f'Failed to send logs to Cortex HTTP collector. Status code: {response.status_code}')
 
@@ -224,6 +238,8 @@ def retry_max(func, max_retries, interval, *args, **kwargs):
         try:
             func(*args, **kwargs)
             return
+        except NonRetryableError:
+            raise
         except Exception as e:
             num_retries += 1
             if num_retries == max_retries:

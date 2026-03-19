@@ -865,7 +865,9 @@ class TestCheckpointManager:
 
         now = datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC)
         cutoff = now - timedelta(days=2)
-        expected_filter = f"last_updated lt '{cutoff.isoformat()}'"
+        # Filter must use 'Z' suffix (not '+00:00') for correct OData lexicographic comparison
+        expected_cutoff_iso = cutoff.strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
+        expected_filter = f"last_updated lt '{expected_cutoff_iso}'"
 
         mock_tc = Mock()
         mock_tc.list_entities = Mock(return_value=[])
@@ -881,6 +883,131 @@ class TestCheckpointManager:
 
         # Verify the OData filter was passed to list_entities
         mock_tc.list_entities.assert_called_once_with(filter=expected_filter)
+
+    def test_last_updated_stored_with_z_suffix(self):
+        """
+        Regression test: last_updated must be stored with 'Z' suffix (not '+00:00').
+
+        Azure Table Storage OData filters use lexicographic string comparison.
+        The '+' character (ASCII 43) sorts before digits (ASCII 48-57), so a
+        timestamp like '2026-03-19T00:47:22+00:00' compares as less-than any
+        cutoff with the same format — causing fresh rows to appear stale and be
+        deleted immediately.
+
+        Using 'Z' suffix (ASCII 90, sorts after all digits) ensures correct
+        chronological ordering via lexicographic comparison.
+        """
+        from checkpoint import CheckpointManager
+
+        mock_tc = Mock()
+        mock_tc.upsert_entity = Mock()
+
+        mgr = CheckpointManager.__new__(CheckpointManager)
+        mgr._table_client = mock_tc
+        mgr._retention_days = 30
+        mgr._cleanup_interval_hours = 25  # never triggers cleanup in this test
+
+        mgr.update('container/y=2024/m=01/d=15/h=10/m=00/PT1H.json', 5, 1000)
+
+        entity = mock_tc.upsert_entity.call_args.kwargs['entity']
+        last_updated = entity['last_updated']
+
+        # Must end with 'Z', not '+00:00'
+        assert last_updated.endswith('Z'), (
+            f"last_updated must use 'Z' suffix for correct OData lexicographic comparison, "
+            f"got: {last_updated!r}"
+        )
+        assert '+00:00' not in last_updated, (
+            f"last_updated must not contain '+00:00' — it causes OData string comparison "
+            f"to incorrectly treat fresh rows as stale. Got: {last_updated!r}"
+        )
+
+    def test_odata_cutoff_uses_z_suffix(self):
+        """
+        Regression test: OData filter cutoff must use 'Z' suffix (not '+00:00').
+
+        Ensures the cutoff string in maybe_cleanup_stale() uses the same 'Z' format
+        as last_updated, so lexicographic comparison correctly identifies stale rows.
+        """
+        from datetime import datetime, timedelta
+        from unittest.mock import patch
+
+        from checkpoint import CheckpointManager
+
+        now = datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC)
+
+        mock_tc = Mock()
+        mock_tc.list_entities = Mock(return_value=[])
+
+        mgr = CheckpointManager.__new__(CheckpointManager)
+        mgr._table_client = mock_tc
+
+        with patch('checkpoint.datetime') as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mgr.maybe_cleanup_stale(retention_days=30)
+
+        call_kwargs = mock_tc.list_entities.call_args.kwargs
+        odata_filter = call_kwargs['filter']
+
+        # Extract the cutoff timestamp from the filter string
+        # Format: "last_updated lt '2024-01-15T12:00:00.000000Z'"
+        cutoff_str = odata_filter.split("'")[1]
+
+        assert cutoff_str.endswith('Z'), (
+            f"OData cutoff must use 'Z' suffix for correct lexicographic comparison, "
+            f"got: {cutoff_str!r}"
+        )
+        assert '+00:00' not in cutoff_str, (
+            f"OData cutoff must not contain '+00:00'. Got: {cutoff_str!r}"
+        )
+
+    def test_fresh_row_not_deleted_within_retention_window(self):
+        """
+        Regression test: a row written moments ago must NOT be deleted by cleanup,
+        even when cleanup runs immediately after (e.g. at hour 0, 6, 12, 18).
+
+        This was the production bug: '+00:00' suffix caused fresh rows to compare
+        as lexicographically less-than the cutoff, triggering immediate deletion.
+        """
+        from datetime import datetime, timedelta
+        from unittest.mock import patch
+
+        from checkpoint import CheckpointManager
+
+        now = datetime(2024, 1, 15, 0, 0, 0, tzinfo=UTC)  # midnight — cleanup hour
+        fresh_ts = now.strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'  # just written
+
+        # Simulate: server returns the fresh row (as if OData filter was broken)
+        # With the fix, the server-side filter should exclude it — so list_entities returns []
+        mock_tc = Mock()
+        mock_tc.list_entities = Mock(return_value=[])  # correct: fresh row excluded server-side
+        mock_tc.submit_transaction = Mock()
+
+        mgr = CheckpointManager.__new__(CheckpointManager)
+        mgr._table_client = mock_tc
+
+        with patch('checkpoint.datetime') as mock_dt:
+            mock_dt.now.return_value = now
+            mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+            mgr.maybe_cleanup_stale(retention_days=30)
+
+        # The OData filter cutoff must be 30 days ago, not now
+        call_kwargs = mock_tc.list_entities.call_args.kwargs
+        odata_filter = call_kwargs['filter']
+        cutoff_str = odata_filter.split("'")[1]
+        expected_cutoff = (now - timedelta(days=30)).strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
+
+        assert cutoff_str == expected_cutoff, (
+            f"Cutoff should be 30 days ago ({expected_cutoff!r}), got {cutoff_str!r}"
+        )
+        # Fresh row timestamp must sort AFTER the cutoff (i.e. not be deleted)
+        assert fresh_ts > cutoff_str, (
+            f"Fresh row timestamp {fresh_ts!r} must be lexicographically greater than "
+            f"cutoff {cutoff_str!r} — otherwise it would be incorrectly deleted"
+        )
+        # No deletions should occur
+        mock_tc.submit_transaction.assert_not_called()
 
     def test_cleanup_deletes_stale_rows(self):
         """maybe_cleanup_stale() batch-deletes rows returned by the server-side filter."""
