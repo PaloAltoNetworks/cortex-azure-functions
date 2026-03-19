@@ -706,6 +706,8 @@ class TestCheckpointManager:
 
     def test_update_stores_blob_name_field(self):
         """update() stores the original blob_name in the row for human readability."""
+        from datetime import datetime, timedelta
+
         from checkpoint import CheckpointManager
 
         mock_tc = Mock()
@@ -714,7 +716,9 @@ class TestCheckpointManager:
         mgr = CheckpointManager.__new__(CheckpointManager)
         mgr._table_client = mock_tc
         mgr._retention_days = 2
-        mgr._cleanup_interval_hours = 25
+        mgr._cleanup_interval_hours = 6
+        # Simulate a recent cleanup so the interval guard suppresses cleanup in this test
+        mgr._last_cleanup_at = datetime.now(UTC) - timedelta(minutes=1)
 
         blob_name = 'container/y=2024/m=01/d=15/h=10/m=00/PT1H.json'
         mgr.update(blob_name, 5, 1000)
@@ -761,6 +765,8 @@ class TestCheckpointManager:
 
     def test_update_creates_row_with_correct_fields(self):
         """update() upserts a row with processed_record_count, blob_size_at_last_run, last_updated."""
+        from datetime import datetime, timedelta
+
         from checkpoint import CheckpointManager
 
         mock_tc = Mock()
@@ -769,7 +775,9 @@ class TestCheckpointManager:
         mgr = CheckpointManager.__new__(CheckpointManager)
         mgr._table_client = mock_tc
         mgr._retention_days = 2
-        mgr._cleanup_interval_hours = 25  # never triggers cleanup in this test
+        mgr._cleanup_interval_hours = 6
+        # Simulate a recent cleanup so the interval guard suppresses cleanup in this test
+        mgr._last_cleanup_at = datetime.now(UTC) - timedelta(minutes=1)
 
         mgr.update('container/y=2024/m=01/d=15/h=10/m=00/PT1H.json', 10, 5000)
 
@@ -783,6 +791,8 @@ class TestCheckpointManager:
 
     def test_update_overwrites_existing_row(self):
         """Calling update() twice overwrites the previous value."""
+        from datetime import datetime, timedelta
+
         from checkpoint import CheckpointManager
 
         upserted = []
@@ -792,7 +802,9 @@ class TestCheckpointManager:
         mgr = CheckpointManager.__new__(CheckpointManager)
         mgr._table_client = mock_tc
         mgr._retention_days = 2
-        mgr._cleanup_interval_hours = 25
+        mgr._cleanup_interval_hours = 6
+        # Simulate a recent cleanup so the interval guard suppresses cleanup in this test
+        mgr._last_cleanup_at = datetime.now(UTC) - timedelta(minutes=1)
 
         blob = 'container/y=2024/m=01/d=15/h=10/m=00/PT1H.json'
         mgr.update(blob, 5, 1000)
@@ -805,8 +817,9 @@ class TestCheckpointManager:
     # maybe_cleanup_stale()
     # ------------------------------------------------------------------
 
-    def test_cleanup_triggered_on_matching_hour(self):
-        """update() calls maybe_cleanup_stale() when current_hour % interval == 0."""
+    def test_cleanup_triggered_on_first_invocation_after_cold_start(self):
+        """update() calls maybe_cleanup_stale() when _last_cleanup_at is None (cold start)."""
+        from datetime import datetime
         from unittest.mock import patch
 
         from checkpoint import CheckpointManager
@@ -818,12 +831,10 @@ class TestCheckpointManager:
         mgr._table_client = mock_tc
         mgr._retention_days = 2
         mgr._cleanup_interval_hours = 6
+        mgr._last_cleanup_at = None  # simulates fresh cold start
 
-        # Patch maybe_cleanup_stale and datetime so hour == 0 (0 % 6 == 0)
         with patch.object(mgr, 'maybe_cleanup_stale') as mock_cleanup:
-            from datetime import datetime
-
-            fixed_dt = datetime(2024, 1, 15, 0, 30, 0, tzinfo=UTC)  # hour=0
+            fixed_dt = datetime(2024, 1, 15, 3, 30, 0, tzinfo=UTC)  # any hour — doesn't matter
             with patch('checkpoint.datetime') as mock_dt:
                 mock_dt.now.return_value = fixed_dt
                 mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
@@ -831,8 +842,9 @@ class TestCheckpointManager:
 
             mock_cleanup.assert_called_once_with(2)
 
-    def test_cleanup_not_triggered_on_non_matching_hour(self):
-        """update() does NOT call maybe_cleanup_stale() when current_hour % interval != 0."""
+    def test_cleanup_triggered_after_full_interval_elapsed(self):
+        """update() calls maybe_cleanup_stale() when cleanup_interval_hours have passed since last run."""
+        from datetime import datetime
         from unittest.mock import patch
 
         from checkpoint import CheckpointManager
@@ -844,17 +856,78 @@ class TestCheckpointManager:
         mgr._table_client = mock_tc
         mgr._retention_days = 2
         mgr._cleanup_interval_hours = 6
+        # Last cleanup ran exactly 6 hours ago — interval has elapsed
+        mgr._last_cleanup_at = datetime(2024, 1, 15, 0, 0, 0, tzinfo=UTC)
 
         with patch.object(mgr, 'maybe_cleanup_stale') as mock_cleanup:
-            from datetime import datetime
+            fixed_dt = datetime(2024, 1, 15, 6, 0, 0, tzinfo=UTC)  # exactly 6h later
+            with patch('checkpoint.datetime') as mock_dt:
+                mock_dt.now.return_value = fixed_dt
+                mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+                mgr.update('container/PT1H.json', 5, 1000)
 
-            fixed_dt = datetime(2024, 1, 15, 1, 30, 0, tzinfo=UTC)  # hour=1, 1%6 != 0
+            mock_cleanup.assert_called_once_with(2)
+
+    def test_cleanup_not_triggered_within_interval(self):
+        """update() does NOT call maybe_cleanup_stale() when the interval has not yet elapsed."""
+        from datetime import datetime
+        from unittest.mock import patch
+
+        from checkpoint import CheckpointManager
+
+        mock_tc = Mock()
+        mock_tc.upsert_entity = Mock()
+
+        mgr = CheckpointManager.__new__(CheckpointManager)
+        mgr._table_client = mock_tc
+        mgr._retention_days = 2
+        mgr._cleanup_interval_hours = 6
+        # Last cleanup ran only 1 minute ago — interval has NOT elapsed
+        mgr._last_cleanup_at = datetime(2024, 1, 15, 3, 29, 0, tzinfo=UTC)
+
+        with patch.object(mgr, 'maybe_cleanup_stale') as mock_cleanup:
+            fixed_dt = datetime(2024, 1, 15, 3, 30, 0, tzinfo=UTC)  # only 1 min later
             with patch('checkpoint.datetime') as mock_dt:
                 mock_dt.now.return_value = fixed_dt
                 mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
                 mgr.update('container/PT1H.json', 5, 1000)
 
             mock_cleanup.assert_not_called()
+
+    def test_cleanup_not_triggered_repeatedly_within_same_hour(self):
+        """1000 invocations within the same hour only trigger cleanup once."""
+        from datetime import datetime, timedelta
+        from unittest.mock import patch
+
+        from checkpoint import CheckpointManager
+
+        mock_tc = Mock()
+        mock_tc.upsert_entity = Mock()
+
+        mgr = CheckpointManager.__new__(CheckpointManager)
+        mgr._table_client = mock_tc
+        mgr._retention_days = 2
+        mgr._cleanup_interval_hours = 6
+        mgr._last_cleanup_at = None  # cold start
+
+        cleanup_call_count = 0
+
+        def fake_cleanup(retention_days):
+            nonlocal cleanup_call_count
+            cleanup_call_count += 1
+
+        with patch.object(mgr, 'maybe_cleanup_stale', side_effect=fake_cleanup):
+            base_dt = datetime(2024, 1, 15, 0, 0, 0, tzinfo=UTC)
+            for i in range(1000):
+                invocation_dt = base_dt + timedelta(seconds=i * 3)  # 3s apart, all within 1 hour
+                with patch('checkpoint.datetime') as mock_dt:
+                    mock_dt.now.return_value = invocation_dt
+                    mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
+                    mgr.update('container/PT1H.json', i, 1000)
+
+        assert cleanup_call_count == 1, (
+            f'Expected cleanup to run exactly once across 1000 invocations, but ran {cleanup_call_count} times'
+        )
 
     def test_cleanup_uses_server_side_odata_filter(self):
         """maybe_cleanup_stale() passes an OData filter to list_entities() (#2)."""
@@ -897,6 +970,8 @@ class TestCheckpointManager:
         Using 'Z' suffix (ASCII 90, sorts after all digits) ensures correct
         chronological ordering via lexicographic comparison.
         """
+        from datetime import datetime, timedelta
+
         from checkpoint import CheckpointManager
 
         mock_tc = Mock()
@@ -905,7 +980,9 @@ class TestCheckpointManager:
         mgr = CheckpointManager.__new__(CheckpointManager)
         mgr._table_client = mock_tc
         mgr._retention_days = 30
-        mgr._cleanup_interval_hours = 25  # never triggers cleanup in this test
+        mgr._cleanup_interval_hours = 6
+        # Simulate a recent cleanup so the interval guard suppresses cleanup in this test
+        mgr._last_cleanup_at = datetime.now(UTC) - timedelta(minutes=1)
 
         mgr.update('container/y=2024/m=01/d=15/h=10/m=00/PT1H.json', 5, 1000)
 
@@ -914,12 +991,11 @@ class TestCheckpointManager:
 
         # Must end with 'Z', not '+00:00'
         assert last_updated.endswith('Z'), (
-            f"last_updated must use 'Z' suffix for correct OData lexicographic comparison, "
-            f"got: {last_updated!r}"
+            f"last_updated must use 'Z' suffix for correct OData lexicographic comparison, got: {last_updated!r}"
         )
         assert '+00:00' not in last_updated, (
             f"last_updated must not contain '+00:00' — it causes OData string comparison "
-            f"to incorrectly treat fresh rows as stale. Got: {last_updated!r}"
+            f'to incorrectly treat fresh rows as stale. Got: {last_updated!r}'
         )
 
     def test_odata_cutoff_uses_z_suffix(self):
@@ -929,7 +1005,7 @@ class TestCheckpointManager:
         Ensures the cutoff string in maybe_cleanup_stale() uses the same 'Z' format
         as last_updated, so lexicographic comparison correctly identifies stale rows.
         """
-        from datetime import datetime, timedelta
+        from datetime import datetime
         from unittest.mock import patch
 
         from checkpoint import CheckpointManager
@@ -955,12 +1031,9 @@ class TestCheckpointManager:
         cutoff_str = odata_filter.split("'")[1]
 
         assert cutoff_str.endswith('Z'), (
-            f"OData cutoff must use 'Z' suffix for correct lexicographic comparison, "
-            f"got: {cutoff_str!r}"
+            f"OData cutoff must use 'Z' suffix for correct lexicographic comparison, got: {cutoff_str!r}"
         )
-        assert '+00:00' not in cutoff_str, (
-            f"OData cutoff must not contain '+00:00'. Got: {cutoff_str!r}"
-        )
+        assert '+00:00' not in cutoff_str, f"OData cutoff must not contain '+00:00'. Got: {cutoff_str!r}"
 
     def test_fresh_row_not_deleted_within_retention_window(self):
         """
@@ -998,13 +1071,11 @@ class TestCheckpointManager:
         cutoff_str = odata_filter.split("'")[1]
         expected_cutoff = (now - timedelta(days=30)).strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
 
-        assert cutoff_str == expected_cutoff, (
-            f"Cutoff should be 30 days ago ({expected_cutoff!r}), got {cutoff_str!r}"
-        )
+        assert cutoff_str == expected_cutoff, f'Cutoff should be 30 days ago ({expected_cutoff!r}), got {cutoff_str!r}'
         # Fresh row timestamp must sort AFTER the cutoff (i.e. not be deleted)
         assert fresh_ts > cutoff_str, (
-            f"Fresh row timestamp {fresh_ts!r} must be lexicographically greater than "
-            f"cutoff {cutoff_str!r} — otherwise it would be incorrectly deleted"
+            f'Fresh row timestamp {fresh_ts!r} must be lexicographically greater than '
+            f'cutoff {cutoff_str!r} — otherwise it would be incorrectly deleted'
         )
         # No deletions should occur
         mock_tc.submit_transaction.assert_not_called()

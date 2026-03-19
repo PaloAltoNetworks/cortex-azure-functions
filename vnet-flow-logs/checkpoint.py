@@ -60,10 +60,12 @@ class CheckpointManager:
 
     Passive cleanup
     ---------------
-    `update()` calls `maybe_cleanup_stale()` when
-    `datetime.now(utc).hour % cleanup_interval_hours == 0`.
-    `maybe_cleanup_stale()` uses an OData server-side filter on `last_updated`
-    so only stale rows are transferred over the wire (#2).
+    `update()` calls `maybe_cleanup_stale()` at most once per
+    `cleanup_interval_hours` per worker instance, tracked via the
+    `_last_cleanup_at` instance attribute (None after cold start, which
+    always triggers the first cleanup).  `maybe_cleanup_stale()` uses an
+    OData server-side filter on `last_updated` so only stale rows are
+    transferred over the wire (#2).
     """
 
     PARTITION_KEY = 'checkpoints'
@@ -79,6 +81,8 @@ class CheckpointManager:
         self._table_name = table_name
         self._retention_days = retention_days
         self._cleanup_interval_hours = cleanup_interval_hours
+        # None means "never ran" — first invocation after cold start always triggers cleanup.
+        self._last_cleanup_at: datetime | None = None
         logging.info(
             f'CheckpointManager initializing: table={table_name}, '
             f'retention_days={retention_days}, cleanup_interval_hours={cleanup_interval_hours}'
@@ -110,8 +114,8 @@ class CheckpointManager:
         """
         Upsert the checkpoint row for *blob_name* with the new *processed_count*.
 
-        Also triggers passive stale-row cleanup when the current UTC hour is a
-        multiple of *cleanup_interval_hours*.
+        Also triggers passive stale-row cleanup at most once per
+        *cleanup_interval_hours* per worker instance.
         """
         row_key = self._make_row_key(blob_name)
         now_utc = datetime.now(UTC)
@@ -130,13 +134,24 @@ class CheckpointManager:
             f'blob_size={blob_size} bytes, last_updated={now_iso}'
         )
 
-        # Passive cleanup — runs only on matching hours to keep overhead minimal
-        if now_utc.hour % self._cleanup_interval_hours == 0:
+        # Passive cleanup — rate-limited to once per cleanup_interval_hours per worker instance.
+        # _last_cleanup_at is None after cold start, which always triggers the first cleanup.
+        # Subsequent cleanups are skipped until the full interval has elapsed, preventing
+        # thousands of redundant cleanup calls during high-throughput hours.
+        cleanup_interval = timedelta(hours=self._cleanup_interval_hours)
+        if self._last_cleanup_at is None or (now_utc - self._last_cleanup_at) >= cleanup_interval:
+            self._last_cleanup_at = now_utc
             try:
                 self.maybe_cleanup_stale(self._retention_days)
             except Exception as e:
                 # Cleanup failure must never block the main processing path
                 logging.warning(f'Stale checkpoint cleanup failed (non-fatal): {e}')
+        else:
+            next_cleanup = self._last_cleanup_at + cleanup_interval
+            logging.debug(
+                f'Skipping stale cleanup — next eligible at {next_cleanup.isoformat()} UTC '
+                f'(last ran at {self._last_cleanup_at.isoformat()} UTC)'
+            )
 
     def maybe_cleanup_stale(self, retention_days: int) -> None:
         """

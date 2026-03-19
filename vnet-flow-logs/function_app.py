@@ -32,6 +32,7 @@ NON_RETRYABLE_STATUS_CODES = {401, 403}
 
 class NonRetryableError(Exception):
     """Raised for errors that should not be retried (e.g. auth failures)."""
+
     pass
 
 
