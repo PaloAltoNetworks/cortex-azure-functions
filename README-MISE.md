@@ -98,26 +98,6 @@ mise run lint
 
 Configuration is in [`ruff.toml`](ruff.toml).
 
-## Migration from Makefile
-
-The previous Makefile has been converted to mise tasks. All `make` commands now use `mise run`:
-
-| Old Command | New Command |
-|-------------|-------------|
-| `make help` | `mise run help` or `mise tasks` |
-| `make test` | `mise run test` |
-| `make test-vnet` | `mise run test-vnet` |
-| `make test-nsg` | `mise run test-nsg` |
-| `make install` | `mise run install` |
-| `make install-vnet` | `mise run install-vnet` |
-| `make install-nsg` | `mise run install-nsg` |
-| `make install-dev` | `mise run install-dev` |
-| `make clean` | `mise run clean` |
-| N/A | `mise run lint` |
-| N/A | `mise run lint-check` |
-| N/A | `mise run build-vnet` |
-| N/A | `mise run build-nsg` |
-
 ## Benefits of mise
 
 - **Isolated Python version**: Python 3.13 is installed and managed per-project, not system-wide
