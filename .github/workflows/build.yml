@@ -89,14 +89,14 @@ jobs:
       run: mise run build-nsg
     
     - name: Upload vnet artifact
-      uses: actions/upload-artifact@v7.0.0
+      uses: actions/upload-artifact@v7.0.1
       with:
         name: vnet-flow-logs-package
         path: vnet-flow-logs/vnet.zip
         retention-days: 30
     
     - name: Upload nsg artifact
-      uses: actions/upload-artifact@v7.0.0
+      uses: actions/upload-artifact@v7.0.1
       with:
         name: nsg-flow-logs-package
         path: nsg-flow-logs/nsg.zip
