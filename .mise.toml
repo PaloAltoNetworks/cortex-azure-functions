@@ -79,10 +79,10 @@ description = "Run nsg-flow-logs tests (placeholder for when tests are added)"
 depends = ["install-dev"]
 run = """
 echo "Running nsg-flow-logs tests..."
-if [ -d "nsg-flow-logs/tests" ]; then
+if compgen -G "nsg-flow-logs/tests/test_*.py" > /dev/null; then
   cd nsg-flow-logs && python -m pytest tests/ -v
 else
-  echo "No tests found in nsg-flow-logs/tests"
+  echo "No tests found in nsg-flow-logs/tests (skipping)"
 fi
 """
 
