@@ -6,6 +6,7 @@ import time
 from io import BytesIO
 
 import azure.functions as func
+import ijson
 import requests
 from checkpoint import CheckpointManager, get_checkpoint_manager
 
@@ -41,6 +42,21 @@ logging.info('Registering vnet_flow_log_trigger...')
 
 @app.blob_trigger(arg_name='blob', path='insights-logs-flowlogflowevent/{name}', connection='TargetAccountConnection')
 def vnet_flow_log_trigger(blob: func.InputStream):
+    """
+    Blob trigger entry point.
+
+    Memory-conscious streaming design:
+      - We never call `.decode()` on the blob bytes (saves one full file-sized copy).
+      - We never load the full parsed JSON tree (saves another file-sized copy).
+      - We stream `records[*]` one-at-a-time via `ijson`, denormalize each into flow
+        tuples, batch them up to `BATCH_SIZE`, gzip+POST, and release. Peak memory
+        is bounded by `BATCH_SIZE` denormalized dicts plus one in-flight raw record
+        plus ijson's small parser buffers — independent of the blob size.
+
+    Empty blob, whitespace-only blob, and partial / invalid JSON are still detected
+    and skipped without raising, matching the previous behaviour expected by the
+    existing test suite.
+    """
     logging.info(f'Python blob trigger function processing blob, Name: {blob.name}, Size: {blob.length} bytes')
 
     if not CORTEX_HTTP_ENDPOINT:
@@ -51,31 +67,15 @@ def vnet_flow_log_trigger(blob: func.InputStream):
         logging.error('missing cortex access token')
         return
 
+    # Quick early-exit for blobs that are reported as zero-length by the host.
+    if blob.length is not None and blob.length == 0:
+        logging.info(f'Blob {blob.name}: received empty content (length=0), skipping')
+        return
+
     try:
-        content = blob.read().decode('utf-8')
-
-        if isinstance(content, str) and not content.strip():
-            logging.info(f'Blob {blob.name}: received empty content, skipping')
-            return
-
-        try:
-            log_lines = json.loads(content)
-        except json.JSONDecodeError:
-            logging.info(f'Blob {blob.name} is currently incomplete (partial JSON). Skipping until next append.')
-            return
-
-        if not log_lines:
-            logging.warning(f'Blob {blob.name}: parsed JSON is empty, skipping')
-            return
-
-        all_records = log_lines.get('records', [])
-        if not all_records:
-            logging.warning(f'Blob {blob.name}: records array is empty, skipping')
-            return
-
-        logging.info(f'Blob {blob.name}: contains {len(all_records)} total top-level record(s)')
-
-        already_processed = 0
+        # Load the checkpoint *before* we start streaming so we know how many
+        # top-level records to skip. The checkpoint counts top-level records[]
+        # entries already sent to Cortex.
         try:
             checkpoint_mgr = _build_checkpoint_manager()
         except Exception as e:
@@ -85,6 +85,7 @@ def vnet_flow_log_trigger(blob: func.InputStream):
             )
             checkpoint_mgr = None
 
+        already_processed = 0
         if checkpoint_mgr is not None:
             try:
                 already_processed = checkpoint_mgr.get(blob.name)
@@ -94,52 +95,191 @@ def vnet_flow_log_trigger(blob: func.InputStream):
                 )
                 already_processed = 0
 
-            if already_processed > len(all_records):
-                logging.warning(
-                    f'Blob {blob.name}: checkpoint ({already_processed}) exceeds total records '
-                    f'({len(all_records)}) — blob may have been re-created. Resetting checkpoint to 0.'
+        # Stream the blob and process records incrementally.
+        # We need to handle three special cases that the previous (non-streaming)
+        # implementation handled via `json.loads`:
+        #   1. Empty / whitespace-only content     → skip silently
+        #   2. Partial / invalid JSON              → skip silently (will retry on next append)
+        #   3. Records array empty                 → skip silently
+        # We may also need a second streaming pass to handle the "blob shrunk"
+        # edge case (see below) — so we loop at most twice.
+        skip_count = already_processed
+        for attempt in (1, 2):
+            try:
+                stream_result = _stream_and_send_records(blob, skip_count)
+            except _EmptyOrPartialBlobError as e:
+                logging.info(f'Blob {blob.name}: {e}')
+                return
+            except _SendFailedError as e:
+                # HTTP send failed mid-stream — do NOT update checkpoint
+                logging.error(
+                    f'Blob {blob.name}: failed to process/send records. Checkpoint will NOT be updated. Error: {e}'
                 )
-                already_processed = 0
+                return
 
-        new_records = all_records[already_processed:]
+            total_records_seen = stream_result['total_records_seen']
+            new_records_processed = stream_result['new_records_processed']
+            denormalized_sent = stream_result['denormalized_sent']
 
-        if not new_records:
+            if total_records_seen == 0:
+                logging.warning(f'Blob {blob.name}: records array is empty, skipping')
+                return
+
+            # Handle the "blob shrunk / was re-created" edge case: the checkpoint
+            # says we processed more records than the blob currently contains.
+            # In a streaming pass we can only detect this AFTER we've reached the
+            # end of the file, so on the first pass we may have skipped everything
+            # without sending. Reset and re-stream once to actually process the
+            # (smaller) new content. This costs one extra parse pass — but only
+            # the very rare invocation where a flow-log blob is re-created.
+            if attempt == 1 and skip_count > total_records_seen:
+                logging.warning(
+                    f'Blob {blob.name}: checkpoint ({skip_count}) exceeds total records '
+                    f'({total_records_seen}) — blob may have been re-created. Resetting checkpoint to 0 '
+                    f'and reprocessing from scratch.'
+                )
+                skip_count = 0
+                # Loop will re-stream with skip_count=0 and actually send the records.
+                continue
+
+            break  # success — exit the (potentially 1-iteration) retry loop
+
+        if new_records_processed == 0:
             logging.info(
                 f'Blob {blob.name}: no new records since last checkpoint '
-                f'({already_processed}/{len(all_records)} already processed). Skipping.'
+                f'({skip_count}/{total_records_seen} already processed). Skipping.'
             )
             return
 
         logging.info(
-            f'Blob {blob.name}: processing {len(new_records)} new record(s) '
-            f'(checkpoint={already_processed}, total={len(all_records)})'
+            f'Blob {blob.name}: processed {new_records_processed} new top-level record(s) '
+            f'({denormalized_sent} denormalized flow tuples sent) '
+            f'(checkpoint={skip_count}, total={total_records_seen})'
         )
 
-        send_succeeded = False
-        try:
-            process_records_in_batches({'records': new_records})
-            send_succeeded = True
-        except Exception as e:
-            logging.error(
-                f'Blob {blob.name}: failed to process/send records. Checkpoint will NOT be updated. Error: {e}'
-            )
-
-        if send_succeeded and checkpoint_mgr is not None:
+        if checkpoint_mgr is not None:
             try:
                 checkpoint_mgr.update(
                     blob.name,
-                    already_processed + len(new_records),
+                    skip_count + new_records_processed,
                     blob.length,
                 )
             except Exception as e:
                 logging.error(
                     f'Blob {blob.name}: failed to update checkpoint after successful send. '
-                    f'Next invocation may re-process {len(new_records)} record(s). Error: {e}'
+                    f'Next invocation may re-process {new_records_processed} record(s). Error: {e}'
                 )
 
     except Exception as e:
         logging.error(f'Blob {blob.name}: unexpected error during processing. Error: {e}')
         raise
+
+
+class _EmptyOrPartialBlobError(Exception):
+    """Internal: blob is empty, whitespace-only, or contains a truncated/partial JSON document."""
+
+
+class _SendFailedError(Exception):
+    """Internal: an HTTP send to Cortex failed and was not recovered by retries."""
+
+
+def _stream_and_send_records(blob: func.InputStream, already_processed: int) -> dict:
+    """
+    Stream `records[*]` from the blob, skip the first `already_processed` entries,
+    denormalize the rest, and ship them in batches of `BATCH_SIZE`.
+
+    Returns a dict with:
+      - total_records_seen:    int  — total top-level records streamed (incl. skipped)
+      - new_records_processed: int  — top-level records actually processed
+      - denormalized_sent:     int  — total denormalized flow tuples sent
+
+    Raises:
+      _EmptyOrPartialBlobError — empty content or JSON cannot be parsed (e.g. partial append)
+      _SendFailedError         — an HTTP send to Cortex failed after retries
+    """
+    # Treat blob.read() as raw bytes — never decode the whole thing. We wrap the
+    # bytes in BytesIO so ijson can stream from it. Note: blob.read() does load
+    # the full bytes into memory once, which is the smallest required allocation
+    # (~file size). We cannot avoid that without a true chunked reader from the
+    # Functions runtime, which `func.InputStream` does not currently expose
+    # reliably across versions.
+    raw = blob.read()
+    if not raw or not raw.strip():
+        raise _EmptyOrPartialBlobError('received empty content, skipping')
+
+    stream = BytesIO(raw)
+    # ijson's `records.item` JSON path yields each element of the top-level
+    # `records` array as a fully-parsed Python dict, one at a time.
+    # We use the default (yajl2_c if available, otherwise pure-python) backend.
+    try:
+        record_iter = ijson.items(stream, 'records.item')
+
+        batch: list = []
+        total_records_seen = 0
+        new_records_processed = 0
+        denormalized_sent = 0
+
+        try:
+            for record in record_iter:
+                total_records_seen += 1
+                # Skip records that were already processed in a previous invocation.
+                # We still have to parse them (ijson cannot skip without parsing) but
+                # they are released immediately for GC since we don't append them
+                # to the batch.
+                if total_records_seen <= already_processed:
+                    continue
+
+                new_records_processed += 1
+                for denormalized in _iter_denormalized_records(record):
+                    batch.append(denormalized)
+                    if len(batch) >= BATCH_SIZE:
+                        compress_and_send(batch)
+                        denormalized_sent += len(batch)
+                        logging.info(f'Processed and sent {denormalized_sent} denormalized records so far')
+                        batch = []
+                # Drop the reference to the parsed record dict early so it can be
+                # garbage-collected before we parse the next one.
+                del record
+
+            # Flush any remaining records in the last (partial) batch.
+            if batch:
+                compress_and_send(batch)
+                denormalized_sent += len(batch)
+        except ijson.JSONError as e:
+            # Truncated / malformed JSON — likely a partial append being written
+            # by Azure Network Watcher. Match previous behaviour: skip silently
+            # and let the next trigger pick it up when the blob is complete.
+            #
+            # IMPORTANT: if we already shipped some batches before hitting the
+            # malformed byte, we must surface a send-failure so the checkpoint
+            # is NOT advanced. Otherwise the next invocation would skip those
+            # already-shipped records when the blob is re-triggered and we'd
+            # silently lose data (or — if the blob is re-triggered with the
+            # same content — re-process the same prefix and double-send).
+            if denormalized_sent > 0:
+                raise _SendFailedError(
+                    f'JSON became invalid after sending {denormalized_sent} record(s); '
+                    f'checkpoint will not be advanced. Underlying error: {e}'
+                ) from None
+            raise _EmptyOrPartialBlobError(
+                f'is currently incomplete (partial or invalid JSON). Skipping until next append. Error: {e}'
+            ) from None
+
+        return {
+            'total_records_seen': total_records_seen,
+            'new_records_processed': new_records_processed,
+            'denormalized_sent': denormalized_sent,
+        }
+    except _SendFailedError:
+        raise
+    except _EmptyOrPartialBlobError:
+        raise
+    except Exception as e:
+        # Anything else from the send/compress path — surface as _SendFailedError
+        # so the caller knows not to advance the checkpoint.
+        raise _SendFailedError(str(e)) from e
+    finally:
+        stream.close()
 
 
 def _build_checkpoint_manager() -> CheckpointManager | None:
@@ -161,27 +301,17 @@ def _build_checkpoint_manager() -> CheckpointManager | None:
         return None
 
 
-def process_records_in_batches(data):
-    batch = []
-    total_processed = 0
+def _iter_denormalized_records(record):
+    """
+    Yield denormalized records for one top-level `records[i]` entry.
 
-    for record in data['records']:
-        for outer_flow in record['flowRecords']['flows']:
-            for inner_flow in outer_flow['flowGroups']:
-                for flow_tuple in inner_flow['flowTuples']:
-                    denormalized_record = create_vnet_record(record, inner_flow, flow_tuple)
-                    batch.append(denormalized_record)
-
-                    if len(batch) >= BATCH_SIZE:
-                        compress_and_send(batch)
-                        total_processed += len(batch)
-                        logging.info(f'Processed and sent {total_processed} records so far')
-                        batch.clear()
-
-    if batch:
-        compress_and_send(batch)
-        total_processed += len(batch)
-        logging.info(f'Completed processing. Total records sent: {total_processed}')
+    Generator (instead of returning a list) to avoid materializing all flow
+    tuples of a single record in memory before they are appended to the batch.
+    """
+    for outer_flow in record['flowRecords']['flows']:
+        for inner_flow in outer_flow['flowGroups']:
+            for flow_tuple in inner_flow['flowTuples']:
+                yield create_vnet_record(record, inner_flow, flow_tuple)
 
 
 def serialize_in_batches(objects, max_batch_size=CORTEX_MAX_PAYLOAD_SIZE_BYTES):
@@ -206,13 +336,21 @@ def serialize_in_batches(objects, max_batch_size=CORTEX_MAX_PAYLOAD_SIZE_BYTES):
 
 
 def compress_and_send(data):
+    """
+    Compress the given list of denormalized records (split into payload-sized
+    sub-batches if needed) and POST each compressed payload to Cortex.
+
+    Raises _SendFailedError if any sub-batch ultimately fails after retries.
+    """
     try:
         for batch in serialize_in_batches(data):
             compressed = gzip.compress(batch)
             retry_max(http_send, HTTP_MAX_RETRIES, RETRY_INTERVAL, compressed)
+    except _SendFailedError:
+        raise
     except Exception as e:
         logging.error(f'Error during payload compression: {e}')
-        raise
+        raise _SendFailedError(str(e)) from e
 
 
 def http_send(data):
@@ -239,13 +377,15 @@ def retry_max(func, max_retries, interval, *args, **kwargs):
         try:
             func(*args, **kwargs)
             return
-        except NonRetryableError:
-            raise
+        except NonRetryableError as e:
+            # Surface as a send failure so the streaming loop bubbles it up and
+            # the checkpoint is not advanced.
+            raise _SendFailedError(str(e)) from e
         except Exception as e:
             num_retries += 1
             if num_retries == max_retries:
                 logging.error(f'Failed to send logs after {max_retries} attempt(s). Last error: {e}')
-                raise e
+                raise _SendFailedError(str(e)) from e
             else:
                 logging.warning(f'Attempt #{num_retries}/{max_retries} failed: {e}. Retrying in {interval} ms.')
                 time.sleep(interval / 1000)

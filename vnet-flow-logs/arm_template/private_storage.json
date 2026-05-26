@@ -492,6 +492,14 @@
                         {
                             "name": "WEBSITE_RUN_FROM_PACKAGE",
                             "value": "[parameters('remotePackage')]"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_PROCESS_COUNT",
+                            "value": "1"
+                        },
+                        {
+                            "name": "PYTHON_THREADPOOL_THREAD_COUNT",
+                            "value": "1"
                         }
                     ],
                     "alwaysOn": true,

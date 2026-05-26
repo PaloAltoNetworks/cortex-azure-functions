@@ -2,3 +2,6 @@ azure-functions==1.23.0
 requests>=2.34.2
 azure-data-tables>=12.7.0
 requests-toolbelt==1.0.0
+# ijson: incremental / streaming JSON parser. Required for memory-safe processing
+# of large flow log blobs — see vnet_flow_log_trigger in function_app.py.
+ijson>=3.3.0
