@@ -51,21 +51,6 @@ If your Storage Account restricts public access, you must manually authorize the
 
 The function is triggered each time a new blob is written or updated in the configured container of your target storage account. On each trigger, it **streams** the blob content (one top-level `records[]` entry at a time, via [`ijson`](https://pypi.org/project/ijson/)), denormalizes the nested VNET flow log records into individual flow tuples, and forwards them to Cortex in compressed batches over HTTPS.
 
-#### Memory profile
-
-The streaming pipeline is the reason the function can safely handle very large blobs without OOM:
-
-| File size | Records | Flow tuples | Peak RSS | Peak/file ratio |
-|---|---|---|---|---|
-| 148 MB | 4,800 | 2.1 M | ~200 MB | **~1.35×** |
-| 15 MB | 25 | 200 K | ~25 MB | **~1.7×** |
-
-Memory usage scales with the **batch size** (default 1,000 denormalized records, configurable via the `BATCH_SIZE` app setting) — **not** with the size of the input blob. A regression test under `tests/test_memory_benchmark.py` builds a customer-sized synthetic file in memory on every run and asserts that peak RSS stays below 250 MB above baseline. Run it with:
-
-```bash
-pytest -m memory tests/
-```
-
 #### Concurrency caps
 
 To make per-instance peak memory deterministic — particularly when bursts of flow-log blobs arrive simultaneously at the top of every hour — the deployment pins concurrency to predictable values:
@@ -74,7 +59,7 @@ To make per-instance peak memory deterministic — particularly when bursts of f
 |---|---|---|---|
 | `FUNCTIONS_WORKER_PROCESS_COUNT` | `1` | ARM app settings | One Python worker per instance |
 | `PYTHON_THREADPOOL_THREAD_COUNT` | `1` | ARM app settings | One thread per worker for sync triggers |
-| `extensions.blobs.maxDegreeOfParallelism` | `2` | `host.json` | At most 2 concurrent blob invocations per instance |
+| `extensions.blobs.maxDegreeOfParallelism` | `3` | `host.json` | At most 3 concurrent blob invocations per instance |
 | `concurrency.dynamicConcurrencyEnabled` | `true` | `host.json` | Host auto-throttles further if memory pressure is detected |
 
 With these settings, on a P0v3 instance (≈4 GB RAM, 1 vCPU) the function comfortably handles bursts of large flow-log files. If you observe sustained back-pressure (long blob queues), scale out the App Service Plan rather than removing these caps.
