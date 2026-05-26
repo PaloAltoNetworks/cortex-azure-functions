@@ -25,6 +25,7 @@ echo "  mise run install          - Install all dependencies"
 echo "  mise run install-vnet     - Install vnet-flow-logs dependencies"
 echo "  mise run install-nsg      - Install nsg-flow-logs dependencies"
 echo "  mise run install-dev      - Install development dependencies (pytest, ruff)"
+echo "  mise run install-hooks    - Configure git to use the shared .githooks/ directory"
 echo ""
 echo "Cleanup tasks:"
 echo "  mise run clean            - Remove test artifacts and cache"
@@ -52,9 +53,18 @@ echo "Installing nsg-flow-logs dependencies..."
 pip install -r nsg-flow-logs/requirements.txt
 """
 
+[tasks.install-hooks]
+description = "Configure git to use the shared .githooks/ directory"
+run = """
+echo "Configuring git core.hooksPath -> .githooks ..."
+git config core.hooksPath .githooks
+chmod +x .githooks/* 2>/dev/null || true
+echo "✓ Shared git hooks enabled. Pre-commit will run 'mise run lint-check' and 'mise run test'."
+"""
+
 [tasks.install]
-description = "Install all dependencies"
-depends = ["install-vnet", "install-nsg", "install-dev"]
+description = "Install all dependencies and shared git hooks"
+depends = ["install-vnet", "install-nsg", "install-dev", "install-hooks"]
 
 [tasks.test-vnet]
 description = "Run vnet-flow-logs tests"
