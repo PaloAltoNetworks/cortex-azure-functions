@@ -162,7 +162,7 @@ jobs:
         echo "Release notes prepared"
     
     - name: Create Draft Release
-      uses: softprops/action-gh-release@v2.6.1
+      uses: softprops/action-gh-release@v3.0.0
       with:
         tag_name: ${{ inputs.version_tag }}
         name: ${{ inputs.release_name || format('Draft Release {0}', inputs.version_tag) }}
