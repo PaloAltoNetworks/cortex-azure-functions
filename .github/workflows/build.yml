@@ -23,7 +23,7 @@ jobs:
       uses: actions/checkout@v6.0.2
     
     - name: Install mise
-      uses: jdx/mise-action@v4.0.0
+      uses: jdx/mise-action@v4.0.1
     
     - name: Run linting
       run: mise run lint-check
@@ -37,7 +37,7 @@ jobs:
       uses: actions/checkout@v6.0.2
     
     - name: Install mise
-      uses: jdx/mise-action@v4.0.0
+      uses: jdx/mise-action@v4.0.1
     
     - name: Install pip-audit
       run: pip install pip-audit
@@ -62,7 +62,7 @@ jobs:
       uses: actions/checkout@v6.0.2
     
     - name: Install mise
-      uses: jdx/mise-action@v4.0.0
+      uses: jdx/mise-action@v4.0.1
     
     - name: Install dependencies
       run: mise run install
@@ -80,7 +80,7 @@ jobs:
       uses: actions/checkout@v6.0.2
     
     - name: Install mise
-      uses: jdx/mise-action@v4.0.0
+      uses: jdx/mise-action@v4.0.1
     
     - name: Build vnet-flow-logs package
       run: mise run build-vnet
@@ -89,14 +89,14 @@ jobs:
       run: mise run build-nsg
     
     - name: Upload vnet artifact
-      uses: actions/upload-artifact@v7.0.0
+      uses: actions/upload-artifact@v7.0.1
       with:
         name: vnet-flow-logs-package
         path: vnet-flow-logs/vnet.zip
         retention-days: 30
     
     - name: Upload nsg artifact
-      uses: actions/upload-artifact@v7.0.0
+      uses: actions/upload-artifact@v7.0.1
       with:
         name: nsg-flow-logs-package
         path: nsg-flow-logs/nsg.zip
@@ -175,7 +175,7 @@ jobs:
         path: ./artifacts
     
     - name: Create Release
-      uses: softprops/action-gh-release@v2.6.1
+      uses: softprops/action-gh-release@v3.0.0
       with:
         tag_name: ${{ steps.bump_version.outputs.new_version }}
         name: Release ${{ steps.bump_version.outputs.new_version }}

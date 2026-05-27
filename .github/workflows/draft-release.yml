@@ -34,7 +34,7 @@ jobs:
         ref: ${{ inputs.branch }}
     
     - name: Install mise
-      uses: jdx/mise-action@v4.0.0
+      uses: jdx/mise-action@v4.0.1
     
     - name: Run linting
       run: mise run lint-check
@@ -50,7 +50,7 @@ jobs:
         ref: ${{ inputs.branch }}
     
     - name: Install mise
-      uses: jdx/mise-action@v4.0.0
+      uses: jdx/mise-action@v4.0.1
     
     - name: Install pip-audit
       run: pip install pip-audit
@@ -77,7 +77,7 @@ jobs:
         ref: ${{ inputs.branch }}
     
     - name: Install mise
-      uses: jdx/mise-action@v4.0.0
+      uses: jdx/mise-action@v4.0.1
     
     - name: Install dependencies
       run: mise run install
@@ -97,7 +97,7 @@ jobs:
         ref: ${{ inputs.branch }}
     
     - name: Install mise
-      uses: jdx/mise-action@v4.0.0
+      uses: jdx/mise-action@v4.0.1
     
     - name: Build vnet-flow-logs package
       run: mise run build-vnet
@@ -106,14 +106,14 @@ jobs:
       run: mise run build-nsg
     
     - name: Upload vnet artifact
-      uses: actions/upload-artifact@v7.0.0
+      uses: actions/upload-artifact@v7.0.1
       with:
         name: vnet-flow-logs-package
         path: vnet-flow-logs/vnet.zip
         retention-days: 30
     
     - name: Upload nsg artifact
-      uses: actions/upload-artifact@v7.0.0
+      uses: actions/upload-artifact@v7.0.1
       with:
         name: nsg-flow-logs-package
         path: nsg-flow-logs/nsg.zip
@@ -162,7 +162,7 @@ jobs:
         echo "Release notes prepared"
     
     - name: Create Draft Release
-      uses: softprops/action-gh-release@v2.6.1
+      uses: softprops/action-gh-release@v3.0.0
       with:
         tag_name: ${{ inputs.version_tag }}
         name: ${{ inputs.release_name || format('Draft Release {0}', inputs.version_tag) }}
