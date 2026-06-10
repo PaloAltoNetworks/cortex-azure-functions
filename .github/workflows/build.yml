@@ -25,6 +25,10 @@ on:
           - patch
           - minor
           - major
+      release_notes:
+        description: 'Custom release notes (optional). If left empty, the last commit message is used.'
+        required: false
+        type: string
 
 jobs:
   lint:
@@ -141,15 +145,31 @@ jobs:
     - name: Get latest tag
       id: get_tag
       run: |
-        # Get the latest tag, or use v0.0.0 if no tags exist
-        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        # Make sure we have all tags locally
+        git fetch --tags --quiet
+        # Only consider strict semver release tags (vMAJOR.MINOR.PATCH).
+        # This ignores draft/pre-release tags like "vdraft-pr12...".
+        LATEST_TAG=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' \
+          | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+          | sort -V \
+          | tail -n 1)
+        if [ -z "$LATEST_TAG" ]; then
+          LATEST_TAG="v0.0.0"
+        fi
         echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
-        echo "Latest tag: $LATEST_TAG"
+        echo "Latest release tag: $LATEST_TAG"
     
     - name: Bump version
       id: bump_version
       run: |
         LATEST_TAG="${{ steps.get_tag.outputs.latest_tag }}"
+
+        # Validate the tag is strict semver before doing arithmetic on it.
+        if ! [[ "$LATEST_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Latest tag '$LATEST_TAG' is not valid semver (vMAJOR.MINOR.PATCH). Refusing to bump."
+          exit 1
+        fi
+
         # Remove 'v' prefix if present
         VERSION=${LATEST_TAG#v}
         
@@ -182,21 +202,27 @@ jobs:
         fi
         echo "Tag ${NEW_VERSION} is available."
     
-    - name: Get last commit message
+    - name: Prepare release notes
       id: get_commit_msg
+      env:
+        CUSTOM_NOTES: ${{ inputs.release_notes }}
       run: |
-        # Get the last non-merge commit message
-        if [[ "${{ github.event_name }}" == "push" ]]; then
-          # For push events, get the commit message before the merge commit
-          COMMIT_MSG=$(git log --no-merges -1 --pretty=%B)
+        # Prefer custom release notes when provided via workflow_dispatch.
+        if [[ -n "${CUSTOM_NOTES//[[:space:]]/}" ]]; then
+          printf '%s\n' "$CUSTOM_NOTES" > commit_message.txt
+          echo "Using custom release notes from workflow input"
         else
-          # For manual workflow dispatch, get the latest commit
-          COMMIT_MSG=$(git log -1 --pretty=%B)
+          # Fall back to the last non-merge commit message.
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            # For push events, get the commit message before the merge commit
+            COMMIT_MSG=$(git log --no-merges -1 --pretty=%B)
+          else
+            # For manual workflow dispatch, get the latest commit
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+          fi
+          printf '%s\n' "$COMMIT_MSG" > commit_message.txt
+          echo "Using last commit message as release notes"
         fi
-        
-        # Save to file to handle multiline messages
-        echo "$COMMIT_MSG" > commit_message.txt
-        echo "Commit message saved to commit_message.txt"
     
     - name: Download vnet artifact
       uses: actions/download-artifact@v8.0.1
