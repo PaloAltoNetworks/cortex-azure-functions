@@ -7,11 +7,24 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
     inputs:
+      branch:
+        description: 'Branch to build/release from (use a maintenance branch like release/v1.x for hotfixes)'
+        required: true
+        type: string
+        default: 'master'
       create_release:
         description: 'Create a release'
         required: true
         type: boolean
         default: false
+      release_type:
+        description: 'Version bump type (you must choose)'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 jobs:
   lint:
@@ -21,6 +34,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v6.0.3
+      with:
+        ref: ${{ inputs.branch }}
     
     - name: Install mise
       uses: jdx/mise-action@v4.1.0
@@ -35,6 +50,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v6.0.3
+      with:
+        ref: ${{ inputs.branch }}
     
     - name: Install mise
       uses: jdx/mise-action@v4.1.0
@@ -60,6 +77,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v6.0.3
+      with:
+        ref: ${{ inputs.branch }}
     
     - name: Install mise
       uses: jdx/mise-action@v4.1.0
@@ -78,6 +97,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v6.0.3
+      with:
+        ref: ${{ inputs.branch }}
     
     - name: Install mise
       uses: jdx/mise-action@v4.1.0
@@ -106,9 +127,7 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     needs: build
-    if: |
-      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')) ||
-      (github.event_name == 'workflow_dispatch' && inputs.create_release == true)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_release == true }}
     permissions:
       contents: write
     
@@ -116,6 +135,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v6.0.3
       with:
+        ref: ${{ inputs.branch }}
         fetch-depth: 0
     
     - name: Get latest tag
@@ -139,12 +159,28 @@ jobs:
         MINOR=${VERSION_PARTS[1]:-0}
         PATCH=${VERSION_PARTS[2]:-0}
         
-        # Bump minor version
-        MINOR=$((MINOR + 1))
+        # Bump according to the selected release type
+        case "${{ inputs.release_type }}" in
+          major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+          minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+          patch) PATCH=$((PATCH + 1)) ;;
+          *) echo "::error::Invalid release_type '${{ inputs.release_type }}'"; exit 1 ;;
+        esac
         
-        NEW_VERSION="v${MAJOR}.${MINOR}.0"
+        NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
         echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-        echo "New version: $NEW_VERSION"
+        echo "New version: $NEW_VERSION (bump: ${{ inputs.release_type }})"
+    
+    - name: Ensure tag does not already exist
+      run: |
+        NEW_VERSION="${{ steps.bump_version.outputs.new_version }}"
+        # Refresh tags from the remote to catch tags not present locally
+        git fetch --tags --quiet
+        if git rev-parse -q --verify "refs/tags/${NEW_VERSION}" >/dev/null; then
+          echo "::error::Tag ${NEW_VERSION} already exists. Refusing to overwrite an existing release."
+          exit 1
+        fi
+        echo "Tag ${NEW_VERSION} is available."
     
     - name: Get last commit message
       id: get_commit_msg
