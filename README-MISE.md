@@ -58,10 +58,11 @@ Run `mise run help` or `mise tasks` to see all available tasks:
 - `mise run lint-check` - Check linting without fixing
 
 ### Install Tasks
-- `mise run install` - Install all dependencies
+- `mise run install` - Install all dependencies and shared git hooks
 - `mise run install-vnet` - Install vnet-flow-logs dependencies
 - `mise run install-nsg` - Install nsg-flow-logs dependencies
 - `mise run install-dev` - Install development dependencies (pytest, ruff)
+- `mise run install-hooks` - Configure git to use the shared `.githooks/` directory
 
 ### Cleanup Tasks
 - `mise run clean` - Remove test artifacts and cache
@@ -97,6 +98,28 @@ mise run lint
 ```
 
 Configuration is in [`ruff.toml`](ruff.toml).
+
+## Git Hooks (shared)
+
+This repo ships a shared `pre-commit` hook in [`.githooks/`](.githooks/) that
+runs `mise run lint-check` and `mise run test`. The commit is aborted if
+either fails.
+
+Activate it once per clone:
+
+```bash
+mise run install-hooks
+# or directly:
+git config core.hooksPath .githooks
+```
+
+`mise run install` also runs this automatically.
+
+To bypass the hook for a single commit (use sparingly):
+
+```bash
+git commit --no-verify
+```
 
 ## Migration from Makefile
 

@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+#
+# Shared pre-commit hook.
+#
+# This hook lives in the tracked `.githooks/` directory so it is shared
+# across all developers. It is activated by running `mise run install-hooks`
+# (or `git config core.hooksPath .githooks`) once after cloning.
+#
+# It runs `mise run lint-check` and `mise run test`. Any failure aborts the
+# commit. Bypass with `git commit --no-verify` (not recommended).
+
+set -u
+
+# Ensure mise is available
+if ! command -v mise >/dev/null 2>&1; then
+    echo "pre-commit: 'mise' is not installed or not in PATH." >&2
+    echo "Install mise (https://mise.jdx.dev) or commit with --no-verify to skip." >&2
+    exit 1
+fi
+
+# Run from repo root so mise picks up .mise.toml
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT" || exit 1
+
+echo "pre-commit: running 'mise run lint-check'..."
+if ! mise run lint-check; then
+    echo "" >&2
+    echo "pre-commit: lint-check failed. Fix the issues (try 'mise run lint') and commit again." >&2
+    exit 1
+fi
+
+echo "pre-commit: running 'mise run test'..."
+if ! mise run test; then
+    echo "" >&2
+    echo "pre-commit: tests failed. Fix the failing tests and commit again." >&2
+    exit 1
+fi
+
+echo "pre-commit: all checks passed."
+exit 0
