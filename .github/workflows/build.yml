@@ -237,7 +237,7 @@ jobs:
         path: ./artifacts
     
     - name: Create Release
-      uses: softprops/action-gh-release@v3.0.0
+      uses: softprops/action-gh-release@v3.0.2
       with:
         tag_name: ${{ steps.bump_version.outputs.new_version }}
         name: Release ${{ steps.bump_version.outputs.new_version }}
