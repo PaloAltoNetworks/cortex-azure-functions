@@ -42,7 +42,7 @@ jobs:
         ref: ${{ inputs.branch }}
     
     - name: Install mise
-      uses: jdx/mise-action@v4.1.0
+      uses: jdx/mise-action@v4.2.4
     
     - name: Run linting
       run: mise run lint-check
@@ -58,7 +58,7 @@ jobs:
         ref: ${{ inputs.branch }}
     
     - name: Install mise
-      uses: jdx/mise-action@v4.1.0
+      uses: jdx/mise-action@v4.2.4
     
     - name: Install pip-audit
       run: pip install pip-audit
@@ -85,7 +85,7 @@ jobs:
         ref: ${{ inputs.branch }}
     
     - name: Install mise
-      uses: jdx/mise-action@v4.1.0
+      uses: jdx/mise-action@v4.2.4
     
     - name: Install dependencies
       run: mise run install
@@ -105,7 +105,7 @@ jobs:
         ref: ${{ inputs.branch }}
     
     - name: Install mise
-      uses: jdx/mise-action@v4.1.0
+      uses: jdx/mise-action@v4.2.4
     
     - name: Build vnet-flow-logs package
       run: mise run build-vnet
