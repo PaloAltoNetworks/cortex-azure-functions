@@ -14,7 +14,7 @@
   },
   "extensions": {
     "blobs": {
-      "maxDegreeOfParallelism": 3
+      "maxDegreeOfParallelism": 1
     }
   },
   "concurrency": {

@@ -57,6 +57,15 @@
             "metadata": {
                 "description": "Remote package ZIP file URL"
             }
+        },
+        "blobMaxDegreeOfParallelism": {
+            "type": "int",
+            "defaultValue": 1,
+            "minValue": 1,
+            "maxValue": 16,
+            "metadata": {
+                "description": "Maximum number of blob-trigger invocations processed concurrently per function instance. Each in-flight blob is buffered in memory (in both the host and the Python worker), so higher values increase peak memory and the frequency of benign 412 'ConditionNotMet' blob-receipt races. Lower this to 1 if you see OutOfMemory (exit 137) or excessive 412 noise; raise it only if you have memory headroom and need more throughput. Overrides extensions.blobs.maxDegreeOfParallelism in host.json at runtime."
+            }
         }
     },
     "variables": {
@@ -500,6 +509,10 @@
                         {
                             "name": "PYTHON_THREADPOOL_THREAD_COUNT",
                             "value": "1"
+                        },
+                        {
+                            "name": "AzureFunctionsJobHost__extensions__blobs__maxDegreeOfParallelism",
+                            "value": "[string(parameters('blobMaxDegreeOfParallelism'))]"
                         }
                     ],
                     "alwaysOn": true,

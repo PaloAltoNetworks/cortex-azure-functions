@@ -59,10 +59,14 @@ To make per-instance peak memory deterministic — particularly when bursts of f
 |---|---|---|---|
 | `FUNCTIONS_WORKER_PROCESS_COUNT` | `1` | ARM app settings | One Python worker per instance |
 | `PYTHON_THREADPOOL_THREAD_COUNT` | `1` | ARM app settings | One thread per worker for sync triggers |
-| `extensions.blobs.maxDegreeOfParallelism` | `3` | `host.json` | At most 3 concurrent blob invocations per instance |
+| `extensions.blobs.maxDegreeOfParallelism` | `1` | `host.json` (overridable) | At most 1 concurrent blob invocation per instance |
 | `concurrency.dynamicConcurrencyEnabled` | `true` | `host.json` | Host auto-throttles further if memory pressure is detected |
 
 With these settings, on a P0v3 instance (≈4 GB RAM, 1 vCPU) the function comfortably handles bursts of large flow-log files. If you observe sustained back-pressure (long blob queues), scale out the App Service Plan rather than removing these caps.
+
+**Why `maxDegreeOfParallelism = 1`?** Each in-flight blob is buffered in memory **twice** — once in the .NET Functions host and once in the Python worker — before and while your code streams it. Because the worker is pinned to a single process/thread, admitting more than one blob concurrently only stacks up buffered copies waiting for that one thread, multiplying peak memory for **zero** throughput gain, and increasing the frequency of benign `412 ConditionNotMet` blob-receipt races. Capping to 1 aligns admission with the single-threaded executor.
+
+**Tuning at runtime (no redeploy of code):** `host.json` values can be overridden by app settings using the `AzureFunctionsJobHost__<path>` convention. The deployment exposes this as the `blobMaxDegreeOfParallelism` ARM parameter, which sets the `AzureFunctionsJobHost__extensions__blobs__maxDegreeOfParallelism` app setting. To change concurrency, update that app setting (or redeploy with a new parameter value) — for example set it to `2` only if the instance has memory headroom and you need more throughput. The change takes effect on the next worker restart; no code change is required.
 
 #### Checkpoint Tracking
 
@@ -91,6 +95,45 @@ The ARM template deploys the following resources into your subscription:
 
 ### Usage
 Once the deployment is complete, the Azure Function will automatically start collecting VNET flow logs from the specified storage account and container. The logs will be forwarded to the configured Cortex HTTP endpoint using the provided access token.
+
+### Troubleshooting & Common Issues
+
+#### `System.OutOfMemoryException` on very large `PT1H.json` files
+
+**Symptom.** In the function logs you see entries such as:
+
+```
+System.OutOfMemoryException at System.IO.MemoryStream.set_Capacity
+Category: Host.Results / Function.vnet_flow_log_trigger
+Executed 'Functions.vnet_flow_log_trigger' (Failed, Duration=1385ms)
+```
+
+The invocation fails **quickly** (typically 1–5 seconds) and the host may report `Host is shutting down.`
+
+**Root cause.** This exception originates in the **.NET Azure Functions host process**, not in the Python code. Before the blob is handed to the Python worker, the host buffers the *entire* blob into a `MemoryStream`. A `MemoryStream` grows by **doubling** its internal buffer, so at each growth step it must allocate a **single contiguous array roughly twice the blob's current size**. When `PT1H.json` files are very large — and especially when several are buffered at once — that contiguous allocation can fail on a memory-fragmented or memory-pressured instance, producing the `set_Capacity` OutOfMemoryException.
+
+Because the failure happens in the host *before* the function's streaming code runs, it is unaffected by the worker-side memory optimizations (streaming parse + batching). The function's own peak memory is small and bounded; the pressure comes from the host's whole-blob buffering.
+
+**Mitigations (in order of preference):**
+
+1. **Keep blob concurrency at 1 (default).** `extensions.blobs.maxDegreeOfParallelism` is set to `1` so the host buffers only **one** blob (one `MemoryStream`) per instance at a time, instead of competing for multiple large contiguous allocations simultaneously. If you previously raised this, lower it back to `1`. It is controllable at runtime via the `blobMaxDegreeOfParallelism` ARM parameter (which sets the `AzureFunctionsJobHost__extensions__blobs__maxDegreeOfParallelism` app setting) — no code redeploy needed.
+
+2. **Scale up the App Service Plan SKU (more RAM).** The host must hold the whole blob (plus headroom for the doubling allocation) in memory. If your environment produces genuinely large `PT1H.json` files (hundreds of MB — flow-log blobs grow throughout their active hour and can spike during traffic peaks), the default **P0v3 (~4 GB RAM)** instance may be insufficient. Move to a larger Premium SKU to increase available contiguous memory:
+
+   | SKU | vCPU | RAM (approx.) |
+   |---|---|---|
+   | **P0v3** (default) | 1 | 4 GB |
+   | **P1v3** | 2 | 8 GB |
+   | **P2v3** | 4 | 16 GB |
+   | **P3v3** | 8 | 32 GB |
+
+   Change the plan tier on the App Service Plan created by the deployment (or update the ARM template's `serverfarms` SKU) and restart the Function App. More RAM both reduces fragmentation pressure and allows the larger contiguous `MemoryStream` allocation to succeed.
+
+   > **Rule of thumb:** the host needs on the order of **2–3× the largest expected `PT1H.json` size** in free contiguous memory per concurrently-buffered blob. With `maxDegreeOfParallelism = 1`, budget for a single blob; if you must run higher concurrency, multiply accordingly.
+
+3. **Scale out (add instances) for throughput, not for this OOM.** Adding instances spreads *different* blobs across machines but does **not** make any single blob smaller — each instance still buffers whole blobs. Scale out to keep up with volume, but scale **up** (bigger SKU) to fix the `set_Capacity` OOM on large files.
+
+> **Note:** The worker-side memory tests in `tests/test_memory_benchmark.py` verify the Python streaming implementation only. They intentionally do **not** reproduce this host-side `MemoryStream` OOM, because that allocation happens in a separate (.NET) process before the Python code executes.
 
 ### Contributing
 Contributions are welcome! If you find any issues or have suggestions for improvements, please open an issue or submit a pull request.
