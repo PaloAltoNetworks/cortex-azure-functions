@@ -132,7 +132,7 @@ Edit [`generate_large_test_file.py`](generate_large_test_file.py) to adjust:
 
 ```python
 # In main() function:
-num_records = 100          # Number of top-level records
+num_records = 100  # Number of top-level records
 tuples_per_record = 10000  # Flow tuples per record
 ```
 
