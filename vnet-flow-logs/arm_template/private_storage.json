@@ -66,6 +66,32 @@
             "metadata": {
                 "description": "Maximum number of blob-trigger invocations processed concurrently per function instance. Each in-flight blob is buffered in memory (in both the host and the Python worker), so higher values increase peak memory and the frequency of benign 412 'ConditionNotMet' blob-receipt races. Lower this to 1 if you see OutOfMemory (exit 137) or excessive 412 noise; raise it only if you have memory headroom and need more throughput. Overrides extensions.blobs.maxDegreeOfParallelism in host.json at runtime."
             }
+        },
+        "authMode": {
+            "type": "string",
+            "defaultValue": "AccessKey",
+            "allowedValues": [
+                "AccessKey",
+                "SystemAssigned",
+                "UserAssigned"
+            ],
+            "metadata": {
+                "description": "How the Function App authenticates to the target storage account (TargetAccountConnection) and to its internal host storage (AzureWebJobsStorage). AccessKey: storage account keys (previous behaviour). SystemAssigned: a system-assigned managed identity on the Function App. UserAssigned: an existing user-assigned managed identity (see userAssignedIdentityResourceId). The checkpoint table (CHECKPOINT_CONNECTION) always uses the internal storage account key, because the function code connects with a connection string."
+            }
+        },
+        "userAssignedIdentityResourceId": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": {
+                "description": "Resource ID of an existing user-assigned managed identity. Required only when authMode is UserAssigned, e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>."
+            }
+        },
+        "createTargetRoleAssignments": {
+            "type": "bool",
+            "defaultValue": true,
+            "metadata": {
+                "description": "Only used when authMode is SystemAssigned or UserAssigned. When true, the template grants the managed identity Storage Blob Data Owner and Storage Queue Data Contributor on the target storage account (the deploying user needs Microsoft.Authorization/roleAssignments/write on it, e.g. Owner or User Access Administrator). Set to false when an administrator has granted these two roles in advance (typical for UserAssigned). Roles on the internal storage account created by this template are always granted by the template."
+            }
         }
     },
     "variables": {
@@ -103,7 +129,91 @@
         "privateEndpointPrivateDnsZoneGroupsStorageQueueName": "[format('{0}/{1}', variables('privateEndpointStorageQueueName'), 'queuePrivateDnsZoneGroup')]",
         "privateEndpointPrivateDnsZoneGroupsStorageTableName": "[format('{0}/{1}', variables('privateEndpointStorageTableName'), 'tablePrivateDnsZoneGroup')]",
 
-        "functionNetworkConfigName": "[format('{0}/{1}', variables('functionAppName'), 'virtualNetwork')]"
+        "functionNetworkConfigName": "[format('{0}/{1}', variables('functionAppName'), 'virtualNetwork')]",
+
+        "internalStorageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', variables('internalStorageAccountName'))]",
+        "useManagedIdentity": "[not(equals(parameters('authMode'), 'AccessKey'))]",
+        "useUserAssignedIdentity": "[equals(parameters('authMode'), 'UserAssigned')]",
+        "functionAppIdentity": "[if(variables('useUserAssignedIdentity'), createObject('type', 'UserAssigned', 'userAssignedIdentities', createObject(parameters('userAssignedIdentityResourceId'), createObject())), createObject('type', if(variables('useManagedIdentity'), 'SystemAssigned', 'None')))]",
+        "internalRoleAssignmentDeploymentName": "[format('cortex-nfl-internal-rbac-{0}', variables('onePerResourceGroupAndStorageAccountAndContainer'))]",
+        "targetRoleAssignmentDeploymentName": "[format('cortex-nfl-target-rbac-{0}', variables('onePerResourceGroupAndStorageAccountAndContainer'))]",
+
+        "roleStorageBlobDataOwner": "b7e6dc6d-f1e8-4753-8033-0f276bb0955b",
+        "roleStorageQueueDataContributor": "974c5e8b-45b9-4653-ba55-5f855dd0fb88",
+        "roleStorageTableDataContributor": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
+        "blobServicePropertiesRoleId": "[guid(resourceGroup().id, 'cortex-nfl-blob-service-properties')]",
+        "blobServicePropertiesRoleName": "[format('Cortex NFL Blob Service Properties ({0})', uniqueString(resourceGroup().id))]",
+        "internalStorageRoleIds": [
+            "[variables('roleStorageBlobDataOwner')]",
+            "[variables('roleStorageQueueDataContributor')]",
+            "[variables('roleStorageTableDataContributor')]",
+            "[variables('blobServicePropertiesRoleId')]"
+        ],
+
+        "commonAppSettings": [
+            {
+                "name": "CONTAINER_NAME",
+                "value": "[parameters('targetContainerName')]"
+            },
+            {
+                "name": "CORTEX_ACCESS_TOKEN",
+                "value": "[parameters('cortexAccessToken')]"
+            },
+            {
+                "name": "CORTEX_HTTP_ENDPOINT",
+                "value": "[parameters('cortexHttpEndpoint')]"
+            },
+            {
+                "name": "CHECKPOINT_TABLE_NAME",
+                "value": "vnetflowcheckpoints"
+            },
+            {
+                "name": "FUNCTIONS_WORKER_RUNTIME",
+                "value": "python"
+            },
+            {
+                "name": "FUNCTIONS_EXTENSION_VERSION",
+                "value": "~4"
+            },
+            {
+                "name": "WEBSITE_RUN_FROM_PACKAGE",
+                "value": "[parameters('remotePackage')]"
+            },
+            {
+                "name": "FUNCTIONS_WORKER_PROCESS_COUNT",
+                "value": "1"
+            },
+            {
+                "name": "PYTHON_THREADPOOL_THREAD_COUNT",
+                "value": "1"
+            },
+            {
+                "name": "AzureFunctionsJobHost__extensions__blobs__maxDegreeOfParallelism",
+                "value": "[string(parameters('blobMaxDegreeOfParallelism'))]"
+            }
+        ],
+        "managedIdentityAppSettings": [
+            {
+                "name": "TargetAccountConnection__blobServiceUri",
+                "value": "[format('https://{0}.blob.{1}', parameters('targetStorageAccountName'), environment().suffixes.storage)]"
+            },
+            {
+                "name": "TargetAccountConnection__queueServiceUri",
+                "value": "[format('https://{0}.queue.{1}', parameters('targetStorageAccountName'), environment().suffixes.storage)]"
+            },
+            {
+                "name": "AzureWebJobsStorage__blobServiceUri",
+                "value": "[format('https://{0}.blob.{1}', variables('internalStorageAccountName'), environment().suffixes.storage)]"
+            },
+            {
+                "name": "AzureWebJobsStorage__queueServiceUri",
+                "value": "[format('https://{0}.queue.{1}', variables('internalStorageAccountName'), environment().suffixes.storage)]"
+            },
+            {
+                "name": "AzureWebJobsStorage__tableServiceUri",
+                "value": "[format('https://{0}.table.{1}', variables('internalStorageAccountName'), environment().suffixes.storage)]"
+            }
+        ]
     },
     "resources": [
         {
@@ -443,6 +553,7 @@
             "name": "[variables('functionAppName')]",
             "location": "[variables('location')]",
             "kind": "functionapp,linux",
+            "identity": "[variables('functionAppIdentity')]",
             "dependsOn": [
                 "[resourceId('Microsoft.Storage/storageAccounts', variables('internalStorageAccountName'))]",
                 "[resourceId('Microsoft.Web/serverfarms', variables('servicePlanName'))]",
@@ -461,60 +572,7 @@
                 "siteConfig": {
                     "vnetRouteAllEnabled": true,
                     "linuxFxVersion": "PYTHON|3.13",
-                    "appSettings": [
-                        {
-                            "name": "TargetAccountConnection",
-                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', parameters('targetStorageAccountName'), ';AccountKey=', listKeys(variables('targetStorageAccountId'),'2021-08-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)]"
-                        },
-                        {
-                            "name": "CONTAINER_NAME",
-                            "value": "[parameters('targetContainerName')]"
-                        },
-                        {
-                            "name": "CORTEX_ACCESS_TOKEN",
-                            "value": "[parameters('cortexAccessToken')]"
-                        },
-                        {
-                            "name": "CORTEX_HTTP_ENDPOINT",
-                            "value": "[parameters('cortexHttpEndpoint')]"
-                        },
-                        {
-                            "name": "AzureWebJobsStorage",
-                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('internalStorageAccountName'),';AccountKey=',listkeys(resourceId('Microsoft.Storage/storageAccounts', variables('internalStorageAccountName')), '2021-04-01').keys[0].value,';EndpointSuffix=',environment().suffixes.storage)]"
-                        },
-                        {
-                            "name": "CHECKPOINT_CONNECTION",
-                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('internalStorageAccountName'),';AccountKey=',listkeys(resourceId('Microsoft.Storage/storageAccounts', variables('internalStorageAccountName')), '2021-04-01').keys[0].value,';EndpointSuffix=',environment().suffixes.storage)]"
-                        },
-                        {
-                            "name": "CHECKPOINT_TABLE_NAME",
-                            "value": "vnetflowcheckpoints"
-                        },
-                        {
-                            "name": "FUNCTIONS_WORKER_RUNTIME",
-                            "value": "python"
-                        },
-                        {
-                            "name": "FUNCTIONS_EXTENSION_VERSION",
-                            "value": "~4"
-                        },
-                        {
-                            "name": "WEBSITE_RUN_FROM_PACKAGE",
-                            "value": "[parameters('remotePackage')]"
-                        },
-                        {
-                            "name": "FUNCTIONS_WORKER_PROCESS_COUNT",
-                            "value": "1"
-                        },
-                        {
-                            "name": "PYTHON_THREADPOOL_THREAD_COUNT",
-                            "value": "1"
-                        },
-                        {
-                            "name": "AzureFunctionsJobHost__extensions__blobs__maxDegreeOfParallelism",
-                            "value": "[string(parameters('blobMaxDegreeOfParallelism'))]"
-                        }
-                    ],
+                    "appSettings": "[concat(variables('commonAppSettings'), createArray(createObject('name', 'CHECKPOINT_CONNECTION', 'value', concat('DefaultEndpointsProtocol=https;AccountName=', variables('internalStorageAccountName'), ';AccountKey=', listKeys(variables('internalStorageAccountId'), '2021-04-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage))), if(variables('useManagedIdentity'), variables('managedIdentityAppSettings'), createArray(createObject('name', 'TargetAccountConnection', 'value', concat('DefaultEndpointsProtocol=https;AccountName=', parameters('targetStorageAccountName'), ';AccountKey=', listKeys(variables('targetStorageAccountId'), '2021-08-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)), createObject('name', 'AzureWebJobsStorage', 'value', concat('DefaultEndpointsProtocol=https;AccountName=', variables('internalStorageAccountName'), ';AccountKey=', listKeys(variables('internalStorageAccountId'), '2021-04-01').keys[0].value, ';EndpointSuffix=', environment().suffixes.storage)))), if(variables('useUserAssignedIdentity'), createArray(createObject('name', 'TargetAccountConnection__credential', 'value', 'managedidentity'), createObject('name', 'TargetAccountConnection__clientId', 'value', reference(parameters('userAssignedIdentityResourceId'), '2023-01-31').clientId), createObject('name', 'AzureWebJobsStorage__credential', 'value', 'managedidentity'), createObject('name', 'AzureWebJobsStorage__clientId', 'value', reference(parameters('userAssignedIdentityResourceId'), '2023-01-31').clientId)), createArray()))]",
                     "alwaysOn": true,
                     "ftpsState": "Disabled"
                 },
@@ -534,6 +592,163 @@
             "properties": {
                 "subnetResourceId": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), variables('functionSubnetName'))]",
                 "swiftSupported": true
+            }
+        },
+        {
+            "comments": "Custom role for the internal (host) storage account. With an identity-based AzureWebJobsStorage connection, the blob trigger's log-polling listener (BlobLogListener.EnableLoggingAsync) reads and, if needed, updates the blob service properties (Storage Analytics logging). The Storage data roles do not include this, and Storage Account Contributor would also allow listing keys and deleting the account.",
+            "condition": "[variables('useManagedIdentity')]",
+            "type": "Microsoft.Authorization/roleDefinitions",
+            "apiVersion": "2022-04-01",
+            "name": "[variables('blobServicePropertiesRoleId')]",
+            "properties": {
+                "roleName": "[variables('blobServicePropertiesRoleName')]",
+                "description": "Read and update blob service properties (Storage Analytics logging). Used by the Cortex VNET flow logs collector blob trigger on its internal storage account.",
+                "type": "CustomRole",
+                "permissions": [
+                    {
+                        "actions": [
+                            "Microsoft.Storage/storageAccounts/blobServices/read",
+                            "Microsoft.Storage/storageAccounts/blobServices/write"
+                        ],
+                        "notActions": [],
+                        "dataActions": [],
+                        "notDataActions": []
+                    }
+                ],
+                "assignableScopes": [
+                    "[resourceGroup().id]"
+                ]
+            }
+        },
+        {
+            "comments": "Role assignment names include the principal ID (only possible inside a nested deployment), so a re-created identity gets new assignments instead of failing with RoleAssignmentUpdateNotPermitted.",
+            "condition": "[variables('useManagedIdentity')]",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2022-09-01",
+            "name": "[variables('internalRoleAssignmentDeploymentName')]",
+            "dependsOn": [
+                "[variables('blobServicePropertiesRoleId')]",
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('internalStorageAccountName'))]",
+                "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "expressionEvaluationOptions": {
+                    "scope": "inner"
+                },
+                "parameters": {
+                    "principalId": {
+                        "value": "[if(variables('useManagedIdentity'), if(variables('useUserAssignedIdentity'), reference(parameters('userAssignedIdentityResourceId'), '2023-01-31').principalId, reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2020-12-01', 'full').identity.principalId), '')]"
+                    },
+                    "storageAccountName": {
+                        "value": "[variables('internalStorageAccountName')]"
+                    },
+                    "roleIds": {
+                        "value": "[variables('internalStorageRoleIds')]"
+                    }
+                },
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "principalId": {
+                            "type": "string"
+                        },
+                        "storageAccountName": {
+                            "type": "string"
+                        },
+                        "roleIds": {
+                            "type": "array"
+                        }
+                    },
+                    "variables": {
+                        "storageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+                    },
+                    "resources": [
+                        {
+                            "type": "Microsoft.Authorization/roleAssignments",
+                            "apiVersion": "2022-04-01",
+                            "name": "[guid(variables('storageAccountId'), parameters('principalId'), parameters('roleIds')[copyIndex()])]",
+                            "scope": "[variables('storageAccountId')]",
+                            "copy": {
+                                "name": "internalStorageRoleAssignments",
+                                "count": "[length(parameters('roleIds'))]"
+                            },
+                            "properties": {
+                                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', parameters('roleIds')[copyIndex()])]",
+                                "principalId": "[parameters('principalId')]",
+                                "principalType": "ServicePrincipal"
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "condition": "[and(variables('useManagedIdentity'), parameters('createTargetRoleAssignments'))]",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2022-09-01",
+            "name": "[variables('targetRoleAssignmentDeploymentName')]",
+            "resourceGroup": "[parameters('targetStorageAccountResourceGroup')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "expressionEvaluationOptions": {
+                    "scope": "inner"
+                },
+                "parameters": {
+                    "principalId": {
+                        "value": "[if(variables('useManagedIdentity'), if(variables('useUserAssignedIdentity'), reference(parameters('userAssignedIdentityResourceId'), '2023-01-31').principalId, reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2020-12-01', 'full').identity.principalId), '')]"
+                    },
+                    "storageAccountName": {
+                        "value": "[parameters('targetStorageAccountName')]"
+                    }
+                },
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "principalId": {
+                            "type": "string"
+                        },
+                        "storageAccountName": {
+                            "type": "string"
+                        }
+                    },
+                    "variables": {
+                        "storageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+                        "roleStorageBlobDataOwner": "b7e6dc6d-f1e8-4753-8033-0f276bb0955b",
+                        "roleStorageQueueDataContributor": "974c5e8b-45b9-4653-ba55-5f855dd0fb88"
+                    },
+                    "resources": [
+                        {
+                            "comments": "Blob trigger: read flow log blobs and the $logs container (storage analytics logs) used by the hybrid polling strategy, so the role must be scoped to the storage account rather than to the flow log container.",
+                            "type": "Microsoft.Authorization/roleAssignments",
+                            "apiVersion": "2022-04-01",
+                            "name": "[guid(variables('storageAccountId'), parameters('principalId'), variables('roleStorageBlobDataOwner'))]",
+                            "scope": "[variables('storageAccountId')]",
+                            "properties": {
+                                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('roleStorageBlobDataOwner'))]",
+                                "principalId": "[parameters('principalId')]",
+                                "principalType": "ServicePrincipal"
+                            }
+                        },
+                        {
+                            "comments": "Blob trigger poison queue (webjobs-blobtrigger-poison) lives in the storage account referenced by the trigger connection.",
+                            "type": "Microsoft.Authorization/roleAssignments",
+                            "apiVersion": "2022-04-01",
+                            "name": "[guid(variables('storageAccountId'), parameters('principalId'), variables('roleStorageQueueDataContributor'))]",
+                            "scope": "[variables('storageAccountId')]",
+                            "properties": {
+                                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('roleStorageQueueDataContributor'))]",
+                                "principalId": "[parameters('principalId')]",
+                                "principalType": "ServicePrincipal"
+                            }
+                        }
+                    ]
+                }
             }
         }
     ],
