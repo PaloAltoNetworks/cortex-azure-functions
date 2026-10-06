@@ -27,6 +27,9 @@ To deploy the Azure Function and the required resources, follow these steps:
    * **location**: The region where all the resources will be deployed (leave blank to use the same region as the resource group).
    * **cortexHttpEndpoint**: The Cortex HTTP endpoint.
    * **remotePackage**: The URL of the remote package ZIP file containing the Azure Function code.
+   * **authMode**: How the function authenticates to the storage accounts: `AccessKey` (default, previous behaviour), `SystemAssigned` or `UserAssigned`. See [Authentication Mode](#authentication-mode-access-key--managed-identity).
+   * **userAssignedIdentityResourceId**: Resource ID of an existing user-assigned managed identity. Required only when `authMode` is `UserAssigned`; leaving it empty in that mode makes the deployment fail.
+   * **createTargetRoleAssignments**: Whether the template grants the required roles on your target storage account to the managed identity (default: `true`). Set to `false` if they were granted in advance. Ignored when `authMode` is `AccessKey`.
 
 3. Click **Review + Create** to review your deployment settings.
 4. If the validation passes, click **Create** to start the deployment process.
@@ -46,6 +49,36 @@ If your Storage Account restricts public access, you must manually authorize the
 5. Click **Add** and then **Save** at the bottom of the page.
 
 > **Note:** It may take 5–10 minutes for the Azure network policy to propagate. Ingestion should begin automatically once the connection is authorized.
+
+### Authentication Mode (Access Key / Managed Identity)
+The `authMode` parameter selects how the Function App authenticates to the storage accounts. No code change is required: the Function code (remote package) is the same for all modes.
+
+| Connection | Used for | `AccessKey` | `SystemAssigned` / `UserAssigned` |
+|---|---|---|---|
+| `TargetAccountConnection` | Blob trigger on the target (flow log) storage account | Account key | Managed identity |
+| `AzureWebJobsStorage` | Functions host storage (internal storage account) | Account key | Managed identity |
+| `CHECKPOINT_CONNECTION` | Checkpoint table (internal storage account) | Account key | Account key (*) |
+
+(*) The checkpoint code connects with a connection string, so it always uses the key of the internal storage account created by this template. That account is private (public network access disabled, private endpoints only) and holds no flow log data. With a managed identity mode, **no key of your target storage account is used**, so the target account can have shared key access disabled (`allowSharedKeyAccess: false`).
+
+#### Required roles on your target storage account
+Only these two roles are required on the storage account that holds your flow logs. When `createTargetRoleAssignments` is `true` (default), the template grants them. When it is `false`, grant them to the managed identity in advance.
+
+| Scope | Role |
+|---|---|
+| Target storage account | Storage Blob Data Owner |
+| Target storage account | Storage Queue Data Contributor (blob trigger poison queue) |
+
+The roles on the internal storage account created by this template are always granted by the template, so you do not need to manage them. (For reference: Storage Blob Data Owner, Storage Queue Data Contributor, Storage Table Data Contributor, and a custom role `Cortex NFL Blob Service Properties (<suffix>)` limited to `Microsoft.Storage/storageAccounts/blobServices/read` and `/write`, which the Functions host needs to manage Storage Analytics logging on its host storage.)
+
+#### Notes
+* **Deploying user permissions** (managed identity modes): `Microsoft.Authorization/roleAssignments/write` and `Microsoft.Authorization/roleDefinitions/write` on the deployment resource group (e.g. Owner or User Access Administrator), for the internal storage account roles. When `createTargetRoleAssignments` is `true`, also `Microsoft.Authorization/roleAssignments/write` on the target storage account.
+* **SystemAssigned**: the identity is created with the Function App and removed with it.
+* **UserAssigned**: create the identity beforehand. To keep the deploying user from needing any permission on your target storage account, have an administrator grant the two roles above to the identity in advance and deploy with `createTargetRoleAssignments` set to `false`. The deploying user also needs Managed Identity Operator on the identity. Use a dedicated identity for this collector; do not share it with other workloads. `userAssignedIdentityResourceId` must be set: if it is empty, the deployment fails with an error that does not clearly point to the missing parameter.
+* Role assignments can take a few minutes to propagate. `403 AuthorizationPermissionMismatch` errors right after deployment are expected and stop once the roles are effective.
+* The custom role is created and assigned in the same deployment. Because new role definitions take time to replicate, the first deployment can occasionally fail with `RoleDefinitionDoesNotExist`. Redeploy with the same parameters; the second deployment succeeds once the definition has replicated.
+* Switching an existing deployment back to `AccessKey` removes the managed identity from the Function App (identity type `None`).
+* Role assignments are not removed when the identity they were granted to is deleted (switching back to `AccessKey`, re-creating a `SystemAssigned` identity, or deleting the Function App). They remain on the storage accounts as `Identity not found` entries and can be deleted manually from **Access control (IAM) > Role assignments**.
 
 ### How It Works
 
